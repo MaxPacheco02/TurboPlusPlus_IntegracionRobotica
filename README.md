@@ -7,4 +7,3 @@ Team members:
 ### *Demian Marin - A01368643*
 ### *Max Pacheco - A01552369*
 ### *Neil Hernandez - A01284713*
-### *Oscar Cárdenas - A01284083*
