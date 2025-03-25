@@ -1,5 +1,4 @@
-# TurboPlusPlus_IntegracionRobotica
-TE3003B.501
+# TurboPlusPlus_IntegracionRobotica TE3003B.501
 
 Team members:
 ### *Andrés Carrizales - A00832679*
