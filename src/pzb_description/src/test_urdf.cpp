@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include "geometry_msgs/msg/vector3.hpp"
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <cmath>
@@ -17,7 +18,7 @@ class StatePublisher : public rclcpp::Node{
             joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states",10);
 
             pose_sub_ = this->create_subscription<geometry_msgs::msg::Vector3>(
-              "/pzb_pose", 10,std::bind(&PoseSubscriber::pose_callback, this, std::placeholders::_1));
+              "/pzb_pose", 10,std::bind(&StatePublisher::pose_callback, this, std::placeholders::_1));
 
             broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
             RCLCPP_INFO(this->get_logger(),"Starting state publisher");
@@ -28,7 +29,7 @@ class StatePublisher : public rclcpp::Node{
         }
 
     void publish();
-    void pose_callback();
+    void pose_callback(const geometry_msgs::msg::Vector3::SharedPtr msg);
 
     private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
@@ -44,11 +45,16 @@ class StatePublisher : public rclcpp::Node{
     double angle = 0.0;
     double right_wheel_joint = 0;
     double left_wheel_joint = 0;
-
+    double posX = 0;
+    double posY = 0;
+    double theta = 0;
 };
 
 void StatePublisher::pose_callback(const geometry_msgs::msg::Vector3::SharedPtr msg)
 {
+    posX = msg->x;
+    posY = msg->y;
+    theta = msg->z;
     // Handle the received message
     RCLCPP_INFO(this->get_logger(), "Received Pose: x=%.2f, y=%.2f, z=%.2f", msg->x, msg->y, msg->z);
 }
@@ -76,15 +82,15 @@ void StatePublisher::publish(){
     // add translation change
     // t.transform.translation.x=cos(angle)*2;
     // t.transform.translation.y=sin(angle)*2;
-    t.transform.translation.x=0;
-    t.transform.translation.y=0;
+    t.transform.translation.x=posX;
+    t.transform.translation.y=posY;
 
     t.transform.translation.z=0.0;
 
     tf2::Quaternion q;
     // euler angle into Quanternion and add rotation change
     // q.setRPY(0,0,angle+M_PI/2);
-    q.setRPY(0,0,0);
+    q.setRPY(0,0,theta);
     t.transform.rotation.x=q.x();
     t.transform.rotation.y=q.y();
     t.transform.rotation.z=q.z();
