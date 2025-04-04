@@ -38,7 +38,7 @@
     <visual>
       <geometry>
         <!-- <box size="${b_width} ${b_length} ${b_height}"/> -->
-        <mesh filename="package://pzb_description/meshes/Puzzlebot_Jetson_Lidar_Edition_Base.stl" scale="1 1 1"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Jetson_Lidar_Edition_Base.stl" scale="1 1 1"/>
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="blue"/>
@@ -69,7 +69,7 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <!-- <cylinder radius="${wheeldiam/2}" length="0.02"/> -->
-        <mesh filename="package://pzb_description/meshes/Puzzlebot_Wheel.stl" scale="1 1 1"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Wheel.stl" scale="1 1 1"/>
       </geometry>
       <material name="black"/>
     </visual>
@@ -85,7 +85,7 @@
 <xacro:wheel prefix="right" reflect="-1"/>
 <xacro:wheel prefix="left" reflect="1"/>
 
-<joint name="caster_joing" type="fixed"> -->
+<joint name="caster_joint" type="fixed">
   <axis xyz="0 0 0" rpy="0 0 0" />
   <parent link="base_link"/>
   <child link="caster_link"/>
@@ -96,7 +96,7 @@
     <visual>
       <geometry>
         <!-- <sphere radius="${caster_radius}"/> -->
-        <mesh filename="package://pzb_description/meshes/Puzzlebot_Caster_Wheel.stl" scale="1 1 1"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Caster_Wheel.stl" scale="1 1 1"/>
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="black"/>
