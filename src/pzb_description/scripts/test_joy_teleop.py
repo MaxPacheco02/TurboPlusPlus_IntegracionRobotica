@@ -41,7 +41,7 @@ class JoyTeleopNode(Node):
         self.vel_pub_l.publish(left_velocity_msg)
         self.vel_pub_r.publish(right_velocity_msg)
 
-        # self.get_logger().info(f'Published Left Velocity: {left_velocity}, Right Velocity: {right_velocity}')
+        self.get_logger().info(f'Published Left Velocity: {left_velocity}, Right Velocity: {right_velocity}')
 
 def main(args=None):
     rclpy.init(args=args)
