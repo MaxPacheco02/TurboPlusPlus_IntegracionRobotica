@@ -1,5 +1,11 @@
 <?xml version="1.0" ?>
 <sdf version="1.6">
+
+<!--
+Control differential speed straight from gz plugin
+gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0.0}"
+-->
+
   <model name="puzzlebot">
     <pose>0 0 0.07 0 0 0</pose>
     
@@ -38,6 +44,43 @@
           <izz>0.01</izz>
         </inertia>
       </inertial>
+
+      <sensor name='gpu_lidar' type='gpu_lidar'>
+        <pose>0 0 0.5 0 0 0</pose>
+        <topic>lidar</topic>
+        <gz_frame_id>base_link</gz_frame_id>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>640</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14</min_angle>
+              <max_angle>3.14</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>16</samples>
+              <resolution>1</resolution>
+              <min_angle>-1</min_angle>
+              <max_angle>1</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.2</min>
+            <max>20.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+        <alwaysOn>1</alwaysOn>
+        <visualize>true</visualize>
+        <plugin
+          filename="RosGzPointCloud"
+          name="ros_gz_point_cloud::PointCloud">
+          <namespace>custom_params</namespace>
+          <topic>pc2</topic>
+          <frame_id>custom_params/link</frame_id>
+        </plugin>
+      </sensor>      
     </link>
 
     <!-- Right Wheel -->
@@ -210,7 +253,14 @@
       name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
-      <topic>wheel_speed</topic>
+      <topic>/pzb_gz_drive</topic>
+    </plugin>
+
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <odom_covariance_topic>/pzb/odom</odom_covariance_topic>
     </plugin>
 
   </model>

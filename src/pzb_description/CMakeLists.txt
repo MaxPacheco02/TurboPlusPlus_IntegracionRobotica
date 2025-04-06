@@ -7,25 +7,47 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(urdf REQUIRED)
 find_package(robot_state_publisher REQUIRED)
 find_package(xacro REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(pzb_msgs REQUIRED)
+
+set(DEPENDENCIES
+  ament_cmake
+  urdf
+  robot_state_publisher
+  xacro
+  geometry_msgs
+  visualization_msgs
+  std_msgs
+  std_srvs
+  rclcpp
+  sensor_msgs
+  tf2
+  nav_msgs
+  tf2_ros
+  Eigen3
+  tf2_geometry_msgs
+  pzb_msgs
+)
 
 add_executable(test_urdf src/test_urdf.cpp)
+ament_target_dependencies(test_urdf ${DEPENDENCIES})
 
-ament_target_dependencies(test_urdf
-  geometry_msgs
-  sensor_msgs
-  tf2_ros
-  tf2_geometry_msgs
-  rclcpp
-)
+add_executable(pzb_tf2_publisher src/pzb_tf2_publisher.cpp)
+ament_target_dependencies(pzb_tf2_publisher ${DEPENDENCIES})
+
 
 # Install Python executables
 install(PROGRAMS
@@ -34,7 +56,8 @@ DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS
-  test_urdf 
+  test_urdf
+  pzb_tf2_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -43,7 +66,8 @@ install(DIRECTORY
   launch
   urdf
   config
-  meshes
+  models
+  worlds
   DESTINATION share/${PROJECT_NAME}
 )
 if(BUILD_TESTING)

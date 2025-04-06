@@ -77,7 +77,7 @@ void StatePublisher::publish(){
     // odom is the base coordinate system of tf2
     t.header.frame_id="odom";
     // axis is defined in r2d2.urdf.xml file and it is the base coordinate of model
-    t.child_frame_id="base_link";
+    t.child_frame_id="base_axis";
 
     // add translation change
     // t.transform.translation.x=cos(angle)*2;
