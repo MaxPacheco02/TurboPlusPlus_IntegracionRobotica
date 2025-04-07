@@ -1,17 +1,15 @@
 <?xml version="1.0"?>
 <robot name="puzzlebot" xmlns:xacro="http://ros.org/wiki/xacro">
 
-
-<xacro:property name="off_ground" value="0.07" />
+<xacro:property name="off_ground" value="0.049" />
 <xacro:property name="b_width" value="0.188" />
 <xacro:property name="b_length" value="0.188" />
-<xacro:property name="b_height" value="0.095" />
+<xacro:property name="caster_height" value="0.0425" />
 <xacro:property name="wheeldiam" value="0.160" />
 <xacro:property name="caster_radius" value="0.03" />
 
-
 <material name="blue">
-  <color rgba="0 0 0.8 0.7"/>
+  <color rgba="0.737 0.89 0.682 1"/>
 </material>
 
 <material name="black">
@@ -22,84 +20,74 @@
   <color rgba="1 0 0 0 1"/>
 </material>
 
-
-<link name="odom">
-  <joint name="odom" type="fixed">
-    <axis xyz="0 0 0" rpy="0 0 0" />
-    <parent link="map"/>
-    <child link="odom"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-</link>
-
-
-<joint name="base_footprint_joint" type="planar">
-  <axis xyz="0 0 0" rpy="0 0 0" />
-  <parent link="odom"/>
-  <child link="base_footprint"/>
-  <origin xyz="0.5 0.25 0" rpy="0 0 0"/>
-</joint>
+<material name="seethrough">
+  <color rgba="1 0 0 0 0.1"/>
+</material>
 
 <link name="base_footprint">
 </link>
 
-<joint name="base_link_joint" type="fixed"> -->
-  <axis xyz="0 0 0" rpy="0 0 0" />
+<link name="base_axis">
+</link>
+
+<link name="base_link">
+    <visual>
+      <geometry>
+        <!-- <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Jetson_Lidar_Edition_Base.stl" scale="1 1 1"/> -->
+        <mesh filename="package://pzb_description/models/pzb/meshes/pzb_assembly.dae" scale="1 1 1"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="-1.5708 0 0"/>
+      <material name="blue"/>
+    </visual>
+</link>
+
+<joint name="axis_footprint_joint" type="fixed"> 
+  <parent link="base_axis"/>
+  <child link="base_footprint"/>
+  <origin xyz="-0.052 0 0" rpy="0 0 0"/>
+</joint>
+
+<joint name="base_link_joint" type="fixed"> 
   <parent link="base_footprint"/>
   <child link="base_link"/>
   <origin xyz="0 0 ${off_ground}" rpy="0 0 0"/>
 </joint>
 
-<link name="base_link">
-    <visual>
-      <geometry>
-        <box size="${b_width} ${b_length} ${b_height}"/>
-      </geometry>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <material name="blue"/>
-    </visual>
-</link>
-
-
 <xacro:macro name="wheel" params="prefix reflect">
-  <joint name="${prefix}_wheel_joint" type="continuous">
-    <axis xyz="0.0 0.0 1" rpy="0 0 0" />
-    <parent link="base_link"/>
-    <child link="${prefix}_wheel"/>
-    <origin xyz="${b_width*0.2} ${b_length*0.6*reflect} 0" rpy="${pi/2} 0 0" />
-  </joint>
-
   <link name="${prefix}_wheel">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="${wheeldiam/2}" length="0.02"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Wheel.stl" scale="1 1 1"/>
       </geometry>
       <material name="black"/>
     </visual>
   </link>
+  <joint name="${prefix}_wheel_joint" type="continuous">
+    <axis xyz="0.0 0.0 1" rpy="0 0 0" />
+    <parent link="base_link"/>
+    <child link="${prefix}_wheel"/>
+    <origin xyz="0.052 ${reflect*-0.095} ${0.0025*reflect}" rpy="${-reflect*pi/2} 0 0" />
+  </joint>
 </xacro:macro>
 
-<xacro:wheel prefix="right" reflect="1"/>
-<xacro:wheel prefix="left" reflect="-1"/>
+<xacro:wheel prefix="right" reflect="-1"/>
+<xacro:wheel prefix="left" reflect="1"/>
 
-<joint name="caster_joing" type="fixed"> -->
+<joint name="caster_joint" type="fixed">
   <axis xyz="0 0 0" rpy="0 0 0" />
   <parent link="base_link"/>
   <child link="caster_link"/>
-  <origin xyz="-${b_length*0.3} 0 ${-b_height/2}" rpy="0 0 0"/>
+  <origin xyz="-${b_length*0.3} 0 ${-caster_height}" rpy="0 0 0"/>
 </joint>
 
 <link name="caster_link">
-    <visual>
+    <!-- <visual>
       <geometry>
-        <sphere radius="${caster_radius}"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Caster_Wheel.stl" scale="1 1 1"/>
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="black"/>
-    </visual>
+    </visual> -->
 </link>
-
-
-
 </robot>
