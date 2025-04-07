@@ -1,5 +1,9 @@
 # Turbo++ IntegracionRobotica TE3003B.501
 
+<p align="center">
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/tree/main/docs/pzb_mov.gif" width="520" height="341" align="center"/>
+</p>
+
 ## Configuration Manual
 
 ### Prerequisites
