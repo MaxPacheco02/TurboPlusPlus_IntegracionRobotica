@@ -15,7 +15,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <pose>0 0 0 -1.5708 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://pzb/meshes/pzb_assembly.dae</uri>
+            <uri>file://pzb/meshes/pzb_lidar.dae</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
@@ -24,7 +24,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <pose>0 0 0 -1.5708 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://pzb/meshes/pzb_assembly.dae</uri>
+            <uri>file://pzb/meshes/pzb_lidar.dae</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
@@ -155,43 +155,22 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       </inertial>
     </link>
 
-    <!-- Caster -->
-    <link name="caster_link">
-      <pose>-0.0564 0 -0.04 0 0 0</pose>
-      <!-- <visual name="caster_visual">
+    <!-- Lidar Link -->
+    <!-- <link name="lidar">
+      <pose>0.052 0 0.15 0 0 0</pose>
+      <visual name="lidar_visual">
         <geometry>
           <mesh>
-            <uri>file://pzb/meshes/Puzzlebot_Caster_Wheel.stl</uri>
+            <uri>file://pzb/meshes/lidar_cap.dae</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
-        <material>
-          <ambient>0.1 0.1 0.1 1</ambient>
-          <diffuse>0.1 0.1 0.1 1</diffuse>
-          <specular>0.1 0.1 0.1 1</specular>
-          <emissive>0 0 0 1</emissive>
-        </material>
-      </visual> -->
-      <!-- <collision name="caster_collision">
-        <geometry>
-          <mesh>
-            <uri>file://pzb/meshes/Puzzlebot_Caster_Wheel.stl</uri>
-            <scale>1 1 1</scale>
-          </mesh>
-        </geometry>
-      </collision> -->
+      </visual>
       <inertial>
-        <mass>0.1</mass>
-        <inertia>
-          <ixx>0.0001</ixx>
-          <ixy>0</ixy>
-          <ixz>0</ixz>
-          <iyy>0.0001</iyy>
-          <iyz>0</iyz>
-          <izz>0.0001</izz>
-        </inertia>
+        <mass>0.0</mass>
       </inertial>
-    </link>
+    </link> -->
+
 
     <!-- Right Wheel Joint -->
     <joint name="right_wheel_joint" type="revolute">
@@ -237,12 +216,19 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       </physics>
     </joint>
 
-    <!-- Caster Joint -->
-    <joint name="caster_joint" type="fixed">
+    <!-- Lidar Joint -->
+    <!-- <joint name="lidar_joint" type="revolute">
       <parent>base_link</parent>
-      <child>caster_link</child>
+      <child>lidar</child>
       <pose>0 0 0 0 0 0</pose>
-    </joint>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1.79769e+308</lower>
+          <upper>1.79769e+308</upper>
+        </limit>
+      </axis>
+    </joint> -->
 
     <plugin
       filename="gz-sim-diff-drive-system"

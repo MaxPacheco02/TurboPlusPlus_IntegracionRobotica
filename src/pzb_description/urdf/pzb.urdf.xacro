@@ -34,10 +34,18 @@
     <visual>
       <geometry>
         <!-- <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Jetson_Lidar_Edition_Base.stl" scale="1 1 1"/> -->
-        <mesh filename="package://pzb_description/models/pzb/meshes/pzb_assembly.dae" scale="1 1 1"/>
+        <mesh filename="package://pzb_description/models/pzb/meshes/pzb_lidarless.dae" scale="1 1 1"/>
       </geometry>
       <origin xyz="0 0 0" rpy="-1.5708 0 0"/>
-      <material name="blue"/>
+    </visual>
+</link>
+
+<link name="lidar_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://pzb_description/models/pzb/meshes/lidar_cap.dae" scale="1 1 1"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 3.14159"/>
     </visual>
 </link>
 
@@ -51,6 +59,13 @@
   <parent link="base_footprint"/>
   <child link="base_link"/>
   <origin xyz="0 0 ${off_ground}" rpy="0 0 0"/>
+</joint>
+
+<joint name="lidar_joint" type="continuous"> 
+  <axis xyz="0.0 0.0 1" rpy="0 0 0" />
+  <parent link="base_link"/>
+  <child link="lidar_link"/>
+  <origin xyz="0.052 0 0.105" rpy="0 0 0"/>
 </joint>
 
 <xacro:macro name="wheel" params="prefix reflect">
