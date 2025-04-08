@@ -51,6 +51,7 @@ def generate_launch_description():
                    '/lidar@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
                    '/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
                    '/pzb_gz_drive@geometry_msgs/msg/Twist@gz.msgs.Twist',  
+                   '/gz_joints@sensor_msgs/msg/JointState@gz.msgs.Model',
                    ],
         remappings=[
             ('/pzb_gz_drive', '/cmd_vel'),
@@ -61,7 +62,13 @@ def generate_launch_description():
         output='screen',
     )
 
+    gz_joint_broadcaster = Node(
+        package="pzb_description",
+        executable="gz_joint_broadcaster",
+    )
+
     return LaunchDescription([
         gz_sim,
         bridge,
+        gz_joint_broadcaster,
     ])
