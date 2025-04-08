@@ -33,7 +33,6 @@
 <link name="base_link">
     <visual>
       <geometry>
-        <!-- <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Jetson_Lidar_Edition_Base.stl" scale="1 1 1"/> -->
         <mesh filename="package://pzb_description/models/pzb/meshes/pzb_lidarless.dae" scale="1 1 1"/>
       </geometry>
       <origin xyz="0 0 0" rpy="-1.5708 0 0"/>

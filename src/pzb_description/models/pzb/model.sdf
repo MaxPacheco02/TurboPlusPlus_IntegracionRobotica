@@ -42,7 +42,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       </inertial>
 
       <sensor name='gpu_lidar' type='gpu_lidar'>
-        <pose>0 0 0.5 0 0 0</pose>
+        <pose>0 0 0 0 0 0</pose>
         <topic>lidar</topic>
         <gz_frame_id>base_link</gz_frame_id>
         <update_rate>10</update_rate>
@@ -156,20 +156,9 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
     </link>
 
     <!-- Lidar Link -->
-    <!-- <link name="lidar">
-      <pose>0.052 0 0.15 0 0 0</pose>
-      <visual name="lidar_visual">
-        <geometry>
-          <mesh>
-            <uri>file://pzb/meshes/lidar_cap.dae</uri>
-            <scale>1 1 1</scale>
-          </mesh>
-        </geometry>
-      </visual>
-      <inertial>
-        <mass>0.0</mass>
-      </inertial>
-    </link> -->
+    <link name="lidar_link">
+      <!-- <pose>0 0 0 0 0 0</pose> -->
+    </link>
 
 
     <!-- Right Wheel Joint -->
@@ -217,18 +206,11 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
     </joint>
 
     <!-- Lidar Joint -->
-    <!-- <joint name="lidar_joint" type="revolute">
+    <joint name="lidar_joint" type="fixed">
       <parent>base_link</parent>
-      <child>lidar</child>
-      <pose>0 0 0 0 0 0</pose>
-      <axis>
-        <xyz>0 0 1</xyz>
-        <limit>
-          <lower>-1.79769e+308</lower>
-          <upper>1.79769e+308</upper>
-        </limit>
-      </axis>
-    </joint> -->
+      <child>lidar_link</child>
+      <pose>0.052 0 0.1 0 0 0</pose>
+    </joint>
 
     <plugin
       filename="gz-sim-diff-drive-system"
@@ -243,6 +225,13 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       name="gz::sim::systems::OdometryPublisher">
       <odom_frame>odom</odom_frame>
       <odom_covariance_topic>/pzb/odom</odom_covariance_topic>
+      <robot_base_frame>lidar_link</robot_base_frame>
+    </plugin>
+
+    <plugin
+      filename="gz-sim-joint-state-publisher-system"
+      name="gz::sim::systems::JointStatePublisher">
+      <topic>/gz_joints</topic>
     </plugin>
 
   </model>

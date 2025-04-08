@@ -48,6 +48,8 @@ ament_target_dependencies(test_urdf ${DEPENDENCIES})
 add_executable(pzb_tf2_publisher src/pzb_tf2_publisher.cpp)
 ament_target_dependencies(pzb_tf2_publisher ${DEPENDENCIES})
 
+add_executable(gz_joint_broadcaster src/gz_joint_broadcaster.cpp)
+ament_target_dependencies(gz_joint_broadcaster ${DEPENDENCIES})
 
 # Install Python executables
 install(PROGRAMS
@@ -58,6 +60,7 @@ DESTINATION lib/${PROJECT_NAME}
 install(TARGETS
   test_urdf
   pzb_tf2_publisher
+  gz_joint_broadcaster
   DESTINATION lib/${PROJECT_NAME}
 )
 
