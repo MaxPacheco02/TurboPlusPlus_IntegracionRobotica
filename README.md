@@ -22,6 +22,32 @@ If you do not have this distribution installed, [read the following installation
 
 If you do not have this version of Gz sim installed, [read the following installation guide][gz].
 
+Aftere installing Gazebo Sim Garden, add the following lines to your ~/.bashrc file.
+
+```Shell
+export GZ_SIM_RESOURCE_PATH=:<path-to-this-repo>/src/pzb_description/models:$GZ_SIM_RESOURCE_PATH
+export GZ_VERSION=garden
+```
+
+After installation, clone in a separate general ros2 workspace the ros_gz package, for communication between ROS2 and Gazebo Sim.
+```Shell
+cd 
+mkdir -p ros2_ws/src
+cd ros2_ws/src
+git clone https://github.com/gazebosim/ros_gz.git -b caguero/humble_garden
+cd ..
+colcon build
+
+# Also, remember to always source the package before using it, or add the following line to your ~/.bashrc
+source ros2_ws/install/setup.bash
+```
+
+Also install the following dependencies:
+
+```Shell
+sudo apt-get install libgflags-dev libignition-transport11-dev libignition-gazebo6 libignition-gazebo6-dev 
+```
+
 ### Running this repository
 ```Shell
 # Clone the repository and initialize submodules
@@ -34,6 +60,36 @@ colcon build
 
 # Start running the nodes!
 
+```
+
+### Teleoperating the robot using the kinematic model
+```Shell
+# Terminal 1
+ros2 launch pzb_control pzb_control_launch.py
+
+# Terminal 2
+rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+
+# Terminal 3
+ros2 launch pzb_description rviz_launch.py
+
+# Terminal 4
+ros2 run pzb_control pzb_teleop_low_level_node.py
+```
+
+### Teleoperating the robot using GZ SIM
+```Shell
+# Terminal 1
+ros2 launch pzb_description gz_launch.py
+
+# Terminal 2
+rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+
+# Terminal 3
+ros2 launch pzb_description rviz_launch.py
+
+# Terminal 4
+ros2 run pzb_control pzb_teleop_low_level_node.py
 ```
 
 ## Team members:
