@@ -22,6 +22,8 @@ from launch.actions import IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.actions import SetEnvironmentVariable
+from launch.substitutions import TextSubstitution
 
 from launch_ros.actions import Node
 
@@ -31,16 +33,32 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_pzb_description = get_package_share_directory('pzb_description')
 
+    gz_resource_path = SetEnvironmentVariable(
+        name='GZ_SIM_RESOURCE_PATH',
+        value=os.path.join(pkg_pzb_description, 'models')
+    )
+
+    gz_ip = SetEnvironmentVariable(
+        name='GZ_IP',
+        value='127.0.0.1'
+    )
+
+
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
         launch_arguments={
-            'gz_args': PathJoinSubstitution([
-            pkg_pzb_description,
-            'worlds',
-            'pzb_world.sdf'
-        ])}.items(),
+            'gz_args': [
+                TextSubstitution(text='-r '),
+                PathJoinSubstitution([
+                    pkg_pzb_description,
+                    'worlds',
+                    'pzb_world.sdf'
+                ])
+            ]
+        }.items(),
     )
+
 
     # Bridge
     bridge = Node(
@@ -68,7 +86,10 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        gz_resource_path,
+        # gz_ip,
         gz_sim,
         bridge,
-        gz_joint_broadcaster,
+        gz_joint_broadcaster
     ])
+

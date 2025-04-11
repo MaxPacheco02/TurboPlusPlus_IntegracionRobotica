@@ -356,17 +356,11 @@
       <topic_wind_direction>/usv_description/debug/wind/direction</topic_wind_direction>
      </plugin> -->
 
-    <!-- Nathan Benderson Park -->
-    <!-- <include>
-      <pose>0 0 -5 0 0 0</pose>
-      <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/nathan_benderson_park</uri>
-    </include> -->
-
-    <!-- VTec - SIII -->
+    <!-- Puzzlebot -->
     <include>
       <name>pzb</name>
       <pose>0 0 0.085 0 0 0</pose>
-      <uri>pzb</uri>
+      <uri>model://pzb</uri>
     </include>
 
     <model name="ground_plane">
