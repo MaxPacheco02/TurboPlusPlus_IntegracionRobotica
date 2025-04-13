@@ -68,7 +68,7 @@ colcon build
 ros2 launch pzb_control pzb_control_launch.py
 
 # Terminal 2
-rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
 
 # Terminal 3
 ros2 launch pzb_description rviz_launch.py
@@ -83,7 +83,7 @@ ros2 run pzb_control pzb_teleop_low_level_node.py
 ros2 launch pzb_description gz_launch.py
 
 # Terminal 2
-rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
 
 # Terminal 3
 ros2 launch pzb_description rviz_launch.py
