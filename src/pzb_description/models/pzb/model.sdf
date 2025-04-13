@@ -255,7 +255,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
     <plugin
       filename="gz-sim-joint-state-publisher-system"
       name="gz::sim::systems::JointStatePublisher">
-      <topic>/gz_joints</topic>
+      <topic>/gz/joints</topic>
     </plugin>
 
   </model>
