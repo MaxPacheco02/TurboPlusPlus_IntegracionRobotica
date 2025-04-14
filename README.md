@@ -1,7 +1,7 @@
 # Turbo++ IntegracionRobotica TE3003B.501
 
 <p align="center">
-  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pzb_gz_rviz.gif" width="728" height="406" align="center"/>
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pc2.gif" width="728" height="406" align="center"/>
 </p>
 <p align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pzb_gz_rviz.gif" width="769" height="330" align="center"/>
