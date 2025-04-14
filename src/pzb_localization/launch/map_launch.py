@@ -25,7 +25,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'yaml_filename': map_file_path,
-            'topic_name': 'pzb_map',
+            'topic_name': 'pzb/map',
             'frame_id': 'odom',
             }])
 

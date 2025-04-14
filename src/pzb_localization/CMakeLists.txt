@@ -56,6 +56,7 @@ add_executable(mcl_node src/mcl_node.cpp)
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
 target_link_libraries(mcl_node cvplot)
 
+
 # Install Python executables
 install(PROGRAMS
 DESTINATION lib/${PROJECT_NAME}

@@ -55,7 +55,6 @@ DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS
-  test_urdf
   pzb_tf2_publisher
   gz_joint_broadcaster
   DESTINATION lib/${PROJECT_NAME}

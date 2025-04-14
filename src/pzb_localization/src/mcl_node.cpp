@@ -1,24 +1,22 @@
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/quaternion.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
+
+#include <geometry_msgs/msg/pose.hpp>
+
+#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 
-#include "geometry_msgs/msg/vector3.hpp"
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <sensor_msgs/msg/point_field.hpp>
+
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <cmath>
-#include <thread>
+
 #include <chrono>
+#include <string>
+#include <array>
 
-#include "include/robot.h"
-#include "include/MCL.h"
-#include "include/utility.h"
-#include "include/world.h"
-#include "include/robot.cpp"
-#include "include/MCL.cpp"
-#include "include/utility.cpp"
-#include "include/world.cpp"
-#include <iostream>
-
+#include "map_utils.h"
+#include "map_utils.cpp"
 
 using namespace std::chrono_literals;
 
@@ -29,109 +27,57 @@ public:
     {
         using namespace std::placeholders;
 
-        twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd_vel", 10,
-            [this](const geometry_msgs::msg::Twist &msg){
-                u.forward = msg.linear.x;
-                u.turn = msg.angular.z;
-
-                // move the robot
-                R.move(u.turn, u.forward);
-                // get sensor measurements
-                std::vector<double> z = R.sense(true);
-                std::cout << R.get_pose() << std::endl;
-                std::cout << R.get_sensor_readings() << std::endl;
-                // mcl
-                std::vector<particle> belief = MCL(p, u, z).resample();
-                std::cout << "[Error]" << utility::evaluation(&R, &belief, &w) << std::endl;
-                std::cout << "Particle 0 pos: " << std::endl;
-                utility::p0_pos(&R, &belief, &w);
-                std::cout << "Particle size: " << p.size() << std::endl;
-
-                
-                //set new blief
-                utility::visualization(&R, counter++, &p, &belief, &w);
-                p = belief;
+        odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+            "/pzb/odom", 10,
+            [this](const nav_msgs::msg::Odometry &msg){
+                pose = msg.pose.pose;
+                compute_raycast(map, local_map, pose, 4.0);
+                fill_pc(local_map_pc_msg, local_map, 255, 0, 0, 255, 0.05);                        
             });
 
-        odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
+        map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+            "/pzb/map", 10,
+            [this](const nav_msgs::msg::OccupancyGrid &msg){
+                if(grid_map.data.size() == msg.data.size())
+                    return;
 
-        timer_=this->create_wall_timer(10ms,std::bind(&MCLNode::update,this));
+                grid_map = msg;
+                map = map2vec(grid_map);
+                fill_pc(map_pc_msg, map, 0, 0, 255, 255, 0.0);
+            });
+            
+        map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
+        local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10);
 
-        odometry_msg.header.frame_id = "odom";
+        timer_=this->create_wall_timer(100ms,std::bind(&MCLNode::update,this));
 
-        // for(int i = 0 ; i < 10 ; i++){
-        //     landmarks[2*i] = 20 + 5*i;
-        //     landmarks[2*i+1] = 10;
-        // }
-        // for(int i = 0 ; i < 10 ; i++){
-        //     landmarks[20+2*i] = 75;
-        //     landmarks[20+2*i+1] = 10+6*i;
-        // }
-        // for(int i = 0 ; i < 10 ; i++){
-        //     landmarks[40+2*i] = 15+6*i;
-        //     landmarks[40+2*i+1] = 10+6*i;
-        // }     
-
-        w = World(100, 100);
-
-        // set world landmarks
-        for (int i = 1; i < sizeof(landmarks) / sizeof(landmarks[0]); i += 2)
-        {
-            w.set_landmarks(landmarks[i - 1], landmarks[i]);
-        }
-
-        R = Robot(w);
-
-        // set robot noise
-        R.set_noise(0.05, 0.01, 1.0);
-
-        // std::cout << R.get_pose() << std::endl;
-
-        // u.forward = 1.0;
-        // u.turn = -M_PI / 100.0;
-
-        // // move the robot
-        // R.move(u.turn, u.forward);
-        // std::cout << R.get_pose() << std::endl;
-        // std::cout << R.get_sensor_readings() << std::endl;
-    
-        // first belief; create particle set
-        for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
-        {
-            p.emplace_back(Robot(w), 0.0);
-        }
+        init_pc_msg(map_pc_msg);
+        init_pc_msg(local_map_pc_msg);
     }
 
     void update(){
-        quat.setRPY(0, 0, R.get_theta());
-        odometry_msg.pose.pose.position.x = R.get_x();
-        odometry_msg.pose.pose.position.y = R.get_y();
-        tf2::convert(quat, odometry_msg.pose.pose.orientation);
+        map_pc_msg.header.stamp = this->get_clock()->now();
+        local_map_pc_msg.header.stamp = this->get_clock()->now();
 
-        odometry_pub_->publish(odometry_msg);
+        map_pc_pub_->publish(map_pc_msg);
+        local_map_pc_pub_->publish(local_map_pc_msg);
     }
+    
+private:
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pc_pub_, local_map_pc_pub_;
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
 
-    private:
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
+    geometry_msgs::msg::Pose pose;
 
-    nav_msgs::msg::Odometry odometry_msg;
+    nav_msgs::msg::OccupancyGrid grid_map;
+    
+    sensor_msgs::msg::PointCloud2 map_pc_msg;
+    sensor_msgs::msg::PointCloud2 local_map_pc_msg;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
-    tf2::Quaternion quat;
-
-    World w;
-    // double landmarks[60];
-    double landmarks[6]{20,20,40,10,80,90};
-    command u;
-
-    Robot R;
-    int NUMBER_OF_PARTICLES{1000};
-    std::vector<particle> p;
-
-    int counter{0};
+    std::vector<Point> map, local_map;
 };
 
 int main(int argc, char * argv[]){
