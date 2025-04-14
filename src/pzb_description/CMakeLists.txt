@@ -42,9 +42,6 @@ set(DEPENDENCIES
   pzb_msgs
 )
 
-add_executable(test_urdf src/test_urdf.cpp)
-ament_target_dependencies(test_urdf ${DEPENDENCIES})
-
 add_executable(pzb_tf2_publisher src/pzb_tf2_publisher.cpp)
 ament_target_dependencies(pzb_tf2_publisher ${DEPENDENCIES})
 
@@ -58,7 +55,6 @@ DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS
-  test_urdf
   pzb_tf2_publisher
   gz_joint_broadcaster
   DESTINATION lib/${PROJECT_NAME}

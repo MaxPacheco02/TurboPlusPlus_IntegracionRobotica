@@ -42,7 +42,7 @@ public:
         using namespace std::placeholders;
 
         gz_joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-            "/gz_joints", 10,
+            "/gz/joints", 10,
             [this](const sensor_msgs::msg::JointState &msg){
               joint_state_msg.position[0] = std::round(msg.position[1] * 1000.0) / 1000.0;
               joint_state_msg.position[1] = -std::round(msg.position[0] * 1000.0) / 1000.0;

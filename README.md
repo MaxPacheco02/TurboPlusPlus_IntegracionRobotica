@@ -1,6 +1,9 @@
 # Turbo++ IntegracionRobotica TE3003B.501
 
 <p align="center">
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pc2.gif" width="728" height="406" align="center"/>
+</p>
+<p align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pzb_gz_rviz.gif" width="769" height="330" align="center"/>
 </p>
 
@@ -68,7 +71,7 @@ colcon build
 ros2 launch pzb_control pzb_control_launch.py
 
 # Terminal 2
-rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
 
 # Terminal 3
 ros2 launch pzb_description rviz_launch.py
@@ -83,7 +86,7 @@ ros2 run pzb_control pzb_teleop_low_level_node.py
 ros2 launch pzb_description gz_launch.py
 
 # Terminal 2
-rviz2 -d irs/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
+rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/rviz2.rviz
 
 # Terminal 3
 ros2 launch pzb_description rviz_launch.py
