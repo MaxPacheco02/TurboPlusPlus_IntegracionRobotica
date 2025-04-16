@@ -10,12 +10,25 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
-  <depend>tf2</depend>
   <depend>tf2_ros</depend>
+  <depend>launch</depend>
+  <depend>ament_cmake</depend>
   <depend>urdf</depend>
   <depend>robot_state_publisher</depend>
   <depend>xacro</depend>
-  <depend>launch</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
+  <depend>nav_msgs</depend>
+  <depend>Eigen3</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>pzb_msgs</depend>
+  <depend>OpenCV</depend>
+  <depend>cv_bridge</depend>
+  <depend>cvplot</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

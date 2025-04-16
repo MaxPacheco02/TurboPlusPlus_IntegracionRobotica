@@ -1,5 +1,4 @@
 #include "utility.h"
-#include "world.h"
 #include "MCL.h"
 
 #include <iostream>
@@ -35,22 +34,21 @@ double utility::get_gaussian_probability(double mean, double var, double x)
     return p;
 }
 
-double utility::evaluation(Robot *r, std::vector<particle> *p, World *world)
+double utility::evaluation(Robot *r, std::vector<particle> *p)
 {
     //Calculate the mean error of the system
     double sum = 0.0;
     for (int i = 0; i < p->size(); i++)
     {
-        //the second part is because of world's cyclicity
-        double dx = fmod(((*p)[i].r.get_x() - r->get_x() + (world->get_x() / 2.0)), world->get_x()) - (world->get_x() / 2.0);
-        double dy = fmod(((*p)[i].r.get_y() - r->get_y() + (world->get_y() / 2.0)), world->get_y()) - (world->get_y() / 2.0);
+        double dx = (*p)[i].r.get_x() - r->get_x();
+        double dy = (*p)[i].r.get_y() - r->get_y();
         double err = sqrt(pow(dx, 2) + pow(dy, 2));
         sum += err;
     }
     return sum / p->size();
 }
 
-void utility::p0_pos(Robot *r, std::vector<particle> *p, World *world)
+void utility::p0_pos(Robot *r, std::vector<particle> *p)
 {
     //Calculate the mean error of the system
     double sum = 0.0;
@@ -58,12 +56,13 @@ void utility::p0_pos(Robot *r, std::vector<particle> *p, World *world)
         std::cout << "Particle 0 pos:\n" << (*p)[0].r.get_x() << "," << (*p)[0].r.get_y() << std::endl;
     }
 }
-void utility::visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, World *w)
+
+void utility::visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, std::vector<Point>& map)
 {
     float x_min = 0.0;
     float y_min = 0.0;
-    float x_max = 100.0;
-    float y_max = 100.0;
+    float x_max = 5.0;
+    float y_max = 3.0;
 
     //Draw cvplot scatter plot for the robot, landmarks, particles and resampled particles on a graph
     int n = belief->size();
@@ -101,10 +100,9 @@ void utility::visualization(Robot *robot, int step, std::vector<particle> *belie
 
     //Draw landmarks in red
     data.clear();
-    std::vector<double> lm = w->get_landmarks();
-    for (int i = 1; i < lm.size(); i += 2)
+    for (int i = 0; i < map.size(); i ++)
     {
-        data.push_back({lm[i - 1], lm[i]});
+        data.push_back({map[i].x, map[i].y});
     }
     figure.series("Landmarks").set(data).type(cvplot::Dots).color(cvplot::Red);
 
