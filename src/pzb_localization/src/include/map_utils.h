@@ -1,6 +1,8 @@
 #ifndef MAP_UTILS_H
 #define MAP_UTILS_H
 
+#include <geometry_msgs/msg/pose.hpp>
+
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <sensor_msgs/msg/point_field.hpp>

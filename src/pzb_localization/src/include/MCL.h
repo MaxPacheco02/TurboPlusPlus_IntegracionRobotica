@@ -21,11 +21,14 @@ struct command
 class MCL
 {
 public:
-    MCL(std::vector<particle> X, command U, std::vector<double> Z); 
+    MCL(std::vector<particle> X, command U, 
+        std::vector<double> Z, std::vector<Point> map); 
     // resample the particles and return the new belief
     std::vector<particle> resample();
 
 private:
+    // map landmarks
+    std::vector<Point> map__;
     // robot sensor measurements
     std::vector<double> Z__;
     // actuation command

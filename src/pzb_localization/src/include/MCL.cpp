@@ -7,7 +7,7 @@ particle::particle(Robot rr, double ww) : r(rr), w(ww) {}
 command::command(double f, double t) : forward(f), turn(t) {}
 command::command() {}
 
-MCL::MCL(std::vector<particle> X, command U, std::vector<double> Z) : X__(X), U__(U), Z__(Z), max_weight__(0.0) {}
+MCL::MCL(std::vector<particle> X, command U, std::vector<double> Z, std::vector<Point> map) : X__(X), U__(U), Z__(Z), map__(map), max_weight__(0.0) {}
 
 void MCL::motion_update()
 {
@@ -22,9 +22,9 @@ void MCL::sensor_update()
     // update weights with probability of each observations using pdf
     std::for_each(X__.begin(), X__.end(), [this](particle &ptc) {
         // sense environemnt with each particle
-        std::vector<double> meas = ptc.r.sense(false);
+        std::vector<double> meas = ptc.r.sense(map__,false);
         //std::cout << ptc.r.get_sensor_readings() << std::endl;
-        // calculate probability of robot measurements Z considering a pdf of mean observed distance from map and varance of sensor noise
+        // calculate probability of robot measurements Z considering a pdf of mean observed distance from map and variance of sensor noise
         ptc.w = get_measurement_prob(meas);
         // update max weight
         ptc.w > max_weight__ ? max_weight__ = ptc.w : max_weight__ += 0.0;
