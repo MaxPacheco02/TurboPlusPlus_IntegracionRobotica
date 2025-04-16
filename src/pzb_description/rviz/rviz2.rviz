@@ -12,6 +12,7 @@ Panels:
         - /Odometry1/Shape1
         - /Odometry2
         - /Odometry2/Shape1
+        - /Odometry2/Covariance1
         - /Odometry2/Covariance1/Position1
         - /Odometry2/Covariance1/Orientation1
       Splitter Ratio: 0.4899713397026062
@@ -189,20 +190,52 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
-      Enabled: false
+      Enabled: true
       Links:
         All Links Enabled: true
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
+        base_axis:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        caster_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
       Name: RobotModel
       TF Prefix: ""
       Update Interval: 0
-      Value: false
+      Value: true
       Visual Enabled: true
     - Alpha: 0.699999988079071
       Class: rviz_default_plugins/Map
@@ -302,14 +335,14 @@ Visualization Manager:
           Color Style: RGB
           Frame: Local
           Offset: 1
-          Scale: 1
-          Value: true
+          Scale: 10
+          Value: false
         Position:
           Alpha: 1
           Color: 204; 51; 204
-          Scale: 1
+          Scale: 10
           Value: true
-        Value: false
+        Value: true
       Enabled: true
       Keep: 1
       Name: Odometry
@@ -319,10 +352,10 @@ Visualization Manager:
         Axes Length: 1
         Axes Radius: 0.10000000149011612
         Color: 46; 194; 126
-        Head Length: 0.03999999910593033
-        Head Radius: 0.05000000074505806
-        Shaft Length: 0.15000000596046448
-        Shaft Radius: 0.029999999329447746
+        Head Length: 0.05000000074505806
+        Head Radius: 0.03999999910593033
+        Shaft Length: 0.20000000298023224
+        Shaft Radius: 0.019999999552965164
         Value: Arrow
       Topic:
         Depth: 5
@@ -378,25 +411,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.45432186126709
+      Distance: 4.798672199249268
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.1035661697387695
-        Y: 0.7860628962516785
-        Z: -0.0007920158677734435
+        X: 0.022603714838624
+        Y: -0.3937913775444031
+        Z: -0.0003933520056307316
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.5647963285446167
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.5653975009918213
+      Yaw: 4.690395355224609
     Saved: ~
 Window Geometry:
   Displays:

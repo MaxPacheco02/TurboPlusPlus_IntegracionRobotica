@@ -72,11 +72,11 @@ public:
         robot.set_states(0.0, 0.0, 0.0);
 
         // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
-        robot.set_noise(0.05, 0.05, 0.3);
+        robot.set_noise(0.05, 0.01, 0.1);
 
         for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
         {
-            particles.emplace_back(Robot(), 0.0);
+            particles.emplace_back(robot, 0.0);
         }
 
         pose.position = geometry_msgs::build<geometry_msgs::msg::Point>().x(0).y(0).z(0);
@@ -133,7 +133,7 @@ public:
 
         
         // Visualize result
-        utility::visualization(&robot, 0, &particles, &belief, map);
+        // utility::visualization(&robot, 0, &particles, &belief, map);
 
         // Update particles
         particles = belief;
@@ -165,7 +165,7 @@ private:
     Robot robot;
     command control;
     std::vector<particle> particles;
-    int NUMBER_OF_PARTICLES = 1000;
+    int NUMBER_OF_PARTICLES = 500;
 
     geometry_msgs::msg::PoseWithCovariance get_pondered_pose(
         const std::vector<particle>& particles
@@ -237,7 +237,6 @@ private:
         position(position).orientation(orientation);
 
 
-        /*
         
         // Calculate covariance matrix
         // Initialize covariance matrix (6x6 for x, y, z, roll, pitch, yaw)
@@ -287,7 +286,6 @@ private:
         for (size_t i = 0; i < 36; ++i) {
             pose_with_cov.covariance[i] = cov[i];
         }
-        */
         
         return pose_with_cov;
     }
