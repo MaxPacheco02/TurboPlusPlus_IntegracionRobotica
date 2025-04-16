@@ -4,6 +4,10 @@
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/mcl1.gif" width="236" height="297" align="left"/>
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pc2.gif" width="533" height="297" align="right"/>
 </p>
+
+<div style="clear: both;"></div>
+<br/>
+
 <p align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pzb_gz_rviz.gif" width="769" height="330" align="center"/>
 </p>  
