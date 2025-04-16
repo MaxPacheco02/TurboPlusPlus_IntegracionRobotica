@@ -58,7 +58,6 @@ public:
         map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
         local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10);
         mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
-        cmd_odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/command_odom", 10);
 
         timer_=this->create_wall_timer(10ms,std::bind(&MCLNode::update,this));
 
@@ -68,11 +67,12 @@ public:
 
         // Initialize MCL Odometry msg
         mcl_msg.header.frame_id = "odom";
-        cmd_odom_msg.header.frame_id = "odom";
 
         // Setup robot (MCL) variables
         robot.set_states(0.0, 0.0, 0.0);
-        robot.set_noise(0.05, 0.05, 0.1);
+
+        // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
+        robot.set_noise(0.05, 0.05, 0.3);
 
         for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
         {
@@ -90,13 +90,11 @@ public:
         map_pc_msg.header.stamp = this->get_clock()->now();
         local_map_pc_msg.header.stamp = this->get_clock()->now();
         mcl_msg.header.stamp = this->get_clock()->now();
-        cmd_odom_msg.header.stamp = this->get_clock()->now();
 
         map_pc_pub_->publish(map_pc_msg);
         local_map_pc_pub_->publish(local_map_pc_msg);
 
         mcl_pub_->publish(mcl_msg);
-        cmd_odom_pub_->publish(cmd_odom_msg);
 
         // std::cout << robot.get_pose() << std::endl;
     }
@@ -132,6 +130,7 @@ public:
 
         // Run MCL
         std::vector<particle> belief = MCL(particles, control, z, map).resample();
+
         
         // Visualize result
         utility::visualization(&robot, 0, &particles, &belief, map);
@@ -139,15 +138,14 @@ public:
         // Update particles
         particles = belief;
 
-        cmd_odom_msg.pose.pose = robot.get_pose_msg();
+        mcl_msg.pose = get_pondered_pose(belief);
 
         last_pose = pose;
-
     }
     
 private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pc_pub_, local_map_pc_pub_;
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr cmd_odom_pub_, mcl_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mcl_pub_;
     
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -155,7 +153,7 @@ private:
     geometry_msgs::msg::Pose last_pose, pose;
 
     nav_msgs::msg::OccupancyGrid grid_map;
-    nav_msgs::msg::Odometry mcl_msg, cmd_odom_msg;
+    nav_msgs::msg::Odometry mcl_msg;
     
     sensor_msgs::msg::PointCloud2 map_pc_msg;
     sensor_msgs::msg::PointCloud2 local_map_pc_msg;
@@ -169,6 +167,130 @@ private:
     std::vector<particle> particles;
     int NUMBER_OF_PARTICLES = 1000;
 
+    geometry_msgs::msg::PoseWithCovariance get_pondered_pose(
+        const std::vector<particle>& particles
+    ) {
+        geometry_msgs::msg::PoseWithCovariance pose_with_cov;
+        geometry_msgs::msg::Point position;
+        geometry_msgs::msg::Quaternion orientation;
+        
+        if (particles.empty()) {
+            return pose_with_cov;
+        }
+        
+        // Calculate weighted mean position and orientation
+        double total_weight = 0.0;
+        double x_weighted_sum = 0.0;
+        double y_weighted_sum = 0.0;
+        double cos_weighted_sum = 0.0;
+        double sin_weighted_sum = 0.0;
+        
+        for (const auto& p : particles) {
+            double x = p.r.get_x();
+            double y = p.r.get_y();
+            double theta = p.r.get_theta();
+            double weight = p.w;
+            
+            x_weighted_sum += x * weight;
+            y_weighted_sum += y * weight;
+            cos_weighted_sum += std::cos(theta) * weight;
+            sin_weighted_sum += std::sin(theta) * weight;
+            
+            total_weight += weight;
+        }
+        
+        // Handle case where weights sum to zero
+        if (total_weight <= 0.0) {
+            if (!particles.empty()) {
+                // Fallback: use the first particle
+                position.x = particles[0].r.get_x();
+                position.y = particles[0].r.get_y();
+                
+                tf2::Quaternion q;
+                q.setRPY(0, 0, particles[0].r.get_theta());
+                tf2::convert(q, orientation);
+            }
+            pose_with_cov.pose = geometry_msgs::build
+                <geometry_msgs::msg::Pose>().
+                position(position).orientation(orientation);
+            return pose_with_cov;
+        }
+        
+        // Calculate mean values
+        double x_mean = x_weighted_sum / total_weight;
+        double y_mean = y_weighted_sum / total_weight;
+        double theta_mean = std::atan2(
+            sin_weighted_sum / total_weight, 
+            cos_weighted_sum / total_weight
+        );
+        
+        // Set the mean pose
+        position.x = x_mean;
+        position.y = y_mean;
+        
+        tf2::Quaternion q;
+        q.setRPY(0, 0, theta_mean);
+        tf2::convert(q, orientation);
+
+        pose_with_cov.pose = geometry_msgs::build
+        <geometry_msgs::msg::Pose>().
+        position(position).orientation(orientation);
+
+
+        /*
+        
+        // Calculate covariance matrix
+        // Initialize covariance matrix (6x6 for x, y, z, roll, pitch, yaw)
+        std::array<double, 36> cov;
+        std::fill(cov.begin(), cov.end(), 0.0);
+        
+        for (const auto& p : particles) {
+            double x = p.r.get_x();
+            double y = p.r.get_y();
+            double theta = p.r.get_theta();
+            double weight = p.w / total_weight; // Normalize weight
+            
+            // Handle angle difference properly (considering circular nature)
+            double theta_diff = theta - theta_mean;
+            if (theta_diff > M_PI) theta_diff -= 2 * M_PI;
+            if (theta_diff < -M_PI) theta_diff += 2 * M_PI;
+            
+            // Update covariance components (only for x, y, and yaw)
+            // Format is row-major [x, y, z, roll, pitch, yaw]
+            // x variance (index 0)
+            cov[0] += weight * (x - x_mean) * (x - x_mean);
+            // y-x covariance (index 1) and x-y covariance (index 6)
+            cov[1] += weight * (x - x_mean) * (y - y_mean);
+            cov[6] = cov[1]; // Symmetric matrix
+            // y variance (index 7)
+            cov[7] += weight * (y - y_mean) * (y - y_mean);
+            // x-yaw covariance (index 5) and yaw-x covariance (index 30)
+            cov[5] += weight * (x - x_mean) * theta_diff;
+            cov[30] = cov[5]; // Symmetric matrix
+            // y-yaw covariance (index 11) and yaw-y covariance (index 31)
+            cov[11] += weight * (y - y_mean) * theta_diff;
+            cov[31] = cov[11]; // Symmetric matrix
+            // yaw variance (index 35)
+            cov[35] += weight * theta_diff * theta_diff;
+        }
+        
+        // Add small values to diagonal to ensure positive definiteness
+        const double min_variance = 1e-6;
+        cov[0] = std::max(cov[0], min_variance);  // x variance
+        cov[7] = std::max(cov[7], min_variance);  // y variance
+        cov[14] = min_variance; // z variance (unused)
+        cov[21] = min_variance; // roll variance (unused)
+        cov[28] = min_variance; // pitch variance (unused)
+        cov[35] = std::max(cov[35], min_variance); // yaw variance
+
+        // Set covariance
+        for (size_t i = 0; i < 36; ++i) {
+            pose_with_cov.covariance[i] = cov[i];
+        }
+        */
+        
+        return pose_with_cov;
+    }
 };
 
 int main(int argc, char * argv[]){

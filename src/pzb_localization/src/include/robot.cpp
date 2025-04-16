@@ -110,10 +110,10 @@ std::string Robot::get_sensor_readings(const std::vector<Point>& map)
 
 double Robot::get_sensor_noise() { return sense_noise__; }
 
-double Robot::get_x() { return x__; }
+double Robot::get_x() const { return x__; }
 
-double Robot::get_y() { return y__; }
+double Robot::get_y() const { return y__; }
 
-double Robot::get_theta() { return orientation__; }
+double Robot::get_theta() const { return orientation__; }
 
-geometry_msgs::msg::Pose Robot::get_pose_msg() { return pose__; };
+geometry_msgs::msg::Pose Robot::get_pose_msg() const { return pose__; };
