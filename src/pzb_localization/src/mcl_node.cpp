@@ -41,48 +41,7 @@ public:
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
             "/pzb/odom", 10,
             [this](const nav_msgs::msg::Odometry &msg){
-                last_pose = pose;
-                pose = msg.pose.pose;
-
-                // Calculate linear displacement in global frame
-                double dx = pose.position.x - last_pose.position.x;
-                double dy = pose.position.y - last_pose.position.y;
-                
-                // Get yaw angles from quaternions
-                double yaw = tf2::getYaw(pose.orientation);
-                double yaw_last = tf2::getYaw(last_pose.orientation);
-                
-                // Calculate forward motion in robot's local frame
-                // Project the displacement onto the robot's previous heading
-                control.forward = std::cos(yaw_last) * dx + std::sin(yaw_last) * dy;
-                
-                // Calculate turning angle (handle wrapping around +/- PI)
-                control.turn = yaw - yaw_last;
-                if (control.turn > M_PI) control.turn -= 2 * M_PI;
-                if (control.turn < -M_PI) control.turn += 2 * M_PI;
-
-                // Execute read movement (with noise)
-                robot.move(control.turn, control.forward);
-
-                // Read sensor
-                std::vector<double> z = robot.sense(map, false);
-
-                // Run MCL
-                std::vector<particle> belief = MCL(particles, control, z, map).resample();
-                
-                // Visualize result
-                utility::visualization(&robot, 0, &particles, &belief, map);
-
-                // Update particles
-                particles = belief;
-
-                cmd_odom_msg.pose.pose = robot.get_pose_msg();
-
-                std::cout << "read pose msg x: " << robot.get_pose_msg().position.x << std::endl;
-                
-                // Update raycast pc2 msg
-                compute_raycast(map, local_map, pose, 4.0);
-                fill_pc(local_map_pc_msg, local_map, 255, 0, 0, 255, 0.05);
+                pose = msg.pose.pose;                
             });
 
         map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -101,7 +60,7 @@ public:
         mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
         cmd_odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/command_odom", 10);
 
-        timer_=this->create_wall_timer(100ms,std::bind(&MCLNode::update,this));
+        timer_=this->create_wall_timer(20ms,std::bind(&MCLNode::update,this));
 
         // Initialize PointCloud msgs
         init_pc_msg(map_pc_msg);
@@ -113,7 +72,7 @@ public:
 
         // Setup robot (MCL) variables
         robot.set_states(0.0, 0.0, 0.0);
-        robot.set_noise(0.02, 0.01, 1.0);
+        robot.set_noise(0.05, 0.01, 1.0);
 
         for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
         {
@@ -126,6 +85,8 @@ public:
     }
 
     void update(){
+        mcl();
+
         map_pc_msg.header.stamp = this->get_clock()->now();
         local_map_pc_msg.header.stamp = this->get_clock()->now();
         mcl_msg.header.stamp = this->get_clock()->now();
@@ -137,7 +98,51 @@ public:
         mcl_pub_->publish(mcl_msg);
         cmd_odom_pub_->publish(cmd_odom_msg);
 
-        std::cout << robot.get_pose() << std::endl;
+        // std::cout << robot.get_pose() << std::endl;
+    }
+
+    void mcl(){
+
+        // Update raycast pc2 msg
+        compute_raycast(map, local_map, pose, 9.0);
+        fill_pc(local_map_pc_msg, local_map, 255, 0, 0, 255, 0.05);
+
+        // Calculate linear displacement in global frame
+        double dx = pose.position.x - last_pose.position.x;
+        double dy = pose.position.y - last_pose.position.y;
+        
+        // Get yaw angles from quaternions
+        double yaw = tf2::getYaw(pose.orientation);
+        double yaw_last = tf2::getYaw(last_pose.orientation);
+        
+        // Calculate forward motion in robot's local frame
+        // Project the displacement onto the robot's previous heading
+        control.forward = std::cos(yaw_last) * dx + std::sin(yaw_last) * dy;
+        
+        // Calculate turning angle (handle wrapping around +/- PI)
+        control.turn = yaw - yaw_last;
+        if (control.turn > M_PI) control.turn -= 2 * M_PI;
+        if (control.turn < -M_PI) control.turn += 2 * M_PI;
+
+        // Execute movement (with noise)
+        // robot.move(control.turn, control.forward);
+
+        // Read sensor
+        std::vector<double> z = robot.sense(map, pose, true);
+
+        // Run MCL
+        std::vector<particle> belief = MCL(particles, control, z, map).resample();
+        
+        // Visualize result
+        utility::visualization(&robot, 0, &particles, &belief, map);
+
+        // Update particles
+        particles = belief;
+
+        cmd_odom_msg.pose.pose = robot.get_pose_msg();
+
+        last_pose = pose;
+
     }
     
 private:

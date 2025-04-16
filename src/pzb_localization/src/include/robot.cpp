@@ -36,7 +36,7 @@ void Robot::set_noise(double new_f_noise, double new_t_noise, double new_s_noise
 std::vector<double> Robot::sense(const std::vector<Point>& map, bool noise)
 {
     std::vector<Point> local_map;
-    compute_raycast(map, local_map, pose__, 4.0);
+    compute_raycast(map, local_map, pose__, 9.0);
 
     std::vector<double> measurements;
 
@@ -45,6 +45,25 @@ std::vector<double> Robot::sense(const std::vector<Point>& map, bool noise)
     {
         // get Euclidean distance to each landmark and add noise to simulate range finder data
         double m = sqrt(pow((local_map[i].x- x__), 2) + pow((local_map[i].y - y__), 2));
+        noise ? m += utility::get_gaussian_random_number(0.0, sense_noise__) : m += 0.0;
+        measurements.push_back(m);
+    }
+
+    return measurements;
+}
+
+std::vector<double> Robot::sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise)
+{
+    std::vector<Point> local_map;
+    compute_raycast(map, local_map, ext_pose, 9.0);
+
+    std::vector<double> measurements;
+
+    // iterate through landmarks
+    for (int i = 0; i < local_map.size(); i++)
+    {
+        // get Euclidean distance to each landmark and add noise to simulate range finder data
+        double m = sqrt(pow((local_map[i].x- ext_pose.position.x), 2) + pow((local_map[i].y - ext_pose.position.y), 2));
         noise ? m += utility::get_gaussian_random_number(0.0, sense_noise__) : m += 0.0;
         measurements.push_back(m);
     }

@@ -88,7 +88,7 @@ void utility::visualization(Robot *robot, int step, std::vector<particle> *belie
     {
         data.push_back({(*new_belief)[i].r.get_x(), (*new_belief)[i].r.get_y()});
     }
-    figure.series("Resampled Particles").set(data).type(cvplot::Dots).color(cvplot::Yellow);
+    figure.series("Resampled Particles").set(data).type(cvplot::Dots).color(cvplot::Blue);
 
     //Draw particles in green
     data.clear();

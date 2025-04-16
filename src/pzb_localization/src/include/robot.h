@@ -27,6 +27,7 @@ public:
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
     // Sense the environment with sensors
     std::vector<double> sense(const std::vector<Point>& map, bool noise = true);
+    std::vector<double> sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise);
     // Move the robot
     void move(double turn, double forward);
     // Update pose msg
