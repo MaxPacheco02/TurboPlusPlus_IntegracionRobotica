@@ -60,7 +60,7 @@ public:
         mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
         cmd_odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/command_odom", 10);
 
-        timer_=this->create_wall_timer(20ms,std::bind(&MCLNode::update,this));
+        timer_=this->create_wall_timer(10ms,std::bind(&MCLNode::update,this));
 
         // Initialize PointCloud msgs
         init_pc_msg(map_pc_msg);
@@ -72,7 +72,7 @@ public:
 
         // Setup robot (MCL) variables
         robot.set_states(0.0, 0.0, 0.0);
-        robot.set_noise(0.05, 0.01, 1.0);
+        robot.set_noise(0.05, 0.05, 0.1);
 
         for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
         {
