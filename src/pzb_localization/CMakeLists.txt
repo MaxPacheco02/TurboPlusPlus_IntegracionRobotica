@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(pzb_localization)
+project(pzb_localization LANGUAGES CXX CUDA)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -28,6 +28,11 @@ find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(cvplot REQUIRED)
 
+# CUDA config
+find_package(CUDAToolkit REQUIRED)
+set(CMAKE_CUDA_ARCHITECTURES 89)
+
+
 set(DEPENDENCIES
   ament_cmake
   urdf
@@ -47,15 +52,22 @@ set(DEPENDENCIES
   pzb_msgs
   OpenCV
   cv_bridge
+
+  CUDAToolkit
 )
 
 message("cvplot_FOUND: ${cvplot_FOUND}")
 include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
 
-add_executable(mcl_node src/mcl_node.cpp)
+add_executable(mcl_node 
+  src/mcl_node.cpp
+  src/include/cuda_kernels.cu
+  )
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
-target_link_libraries(mcl_node cvplot)
-
+target_link_libraries(mcl_node 
+  cvplot
+  CUDA::cudart
+)
 
 # Install Python executables
 install(PROGRAMS
