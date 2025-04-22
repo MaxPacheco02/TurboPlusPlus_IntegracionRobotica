@@ -22,7 +22,7 @@ void MCL::sensor_update()
     // update weights with probability of each observations using pdf
     std::for_each(X__.begin(), X__.end(), [this](particle &ptc) {
         // sense environemnt with each particle
-        std::vector<double> meas = ptc.r.sense(map__,false);
+        std::vector<double> meas = ptc.r.sense(map__,ptc.r.get_pose_msg(),false);
         //std::cout << ptc.r.get_sensor_readings() << std::endl;
         // calculate probability of robot measurements Z considering a pdf of mean observed distance from map and variance of sensor noise
         ptc.w = get_measurement_prob(meas);

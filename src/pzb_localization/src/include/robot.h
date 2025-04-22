@@ -27,6 +27,7 @@ public:
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
     // Sense the environment with sensors
     std::vector<double> sense(const std::vector<Point>& map, bool noise = true);
+    std::vector<double> sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise);
     // Move the robot
     void move(double turn, double forward);
     // Update pose msg
@@ -34,13 +35,13 @@ public:
     // get sensor noise
     double get_sensor_noise();
     // get x
-    double get_x();
+    double get_x() const;
     // get y
-    double get_y();
+    double get_y() const;
     // get pose msg
-    geometry_msgs::msg::Pose get_pose_msg();
+    geometry_msgs::msg::Pose get_pose_msg() const;
 
-    double get_theta();
+    double get_theta() const;
     // Get pose readings
     std::string get_pose();
     // Get sensor readings
