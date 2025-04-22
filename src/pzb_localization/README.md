@@ -1,1 +1,1 @@
-# Package for Puzzlebot Description
+# Package for the Puzzlebot Localization Algorithms
