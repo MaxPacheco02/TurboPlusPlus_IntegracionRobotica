@@ -3,47 +3,32 @@
 
 #include "robot.h"
 
-struct particle
-{
-    particle(Robot r, double w);
-    Robot r;
-    double w;
-};
-
-struct command
-{
-    command();
-    command(double f, double t);
-    double forward;
-    double turn;
-};
-
 class MCL
 {
 public:
-    MCL(std::vector<particle> X, command U, 
-        std::vector<double> Z, std::vector<Point> map); 
+    MCL(particle* X, command U, 
+        double* Z, Point* map); 
     // resample the particles and return the new belief
-    std::vector<particle> resample();
+    particle* resample();
 
 private:
     // map landmarks
-    std::vector<Point> map__;
+    Point* map__;
+    int map_N__;
     // robot sensor measurements
-    std::vector<double> Z__;
+    double* Z__;
+    int Z_N__;
     // actuation command
     command U__;
     // belief
-    std::vector<particle> X__;
+    particle* X__;
+    int X_N__;
     //maximum weight
     double max_weight__;
     // update
     void motion_update();
     // predict
     void sensor_update();
-    // Get measurement probability
-    double get_measurement_prob(std::vector<double> measurements);
-
 };
 
 #endif /* MCL_H */

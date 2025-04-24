@@ -34,6 +34,22 @@ double utility::get_gaussian_probability(double mean, double var, double x)
     return p;
 }
 
+double utility::get_measurement_prob(double* measurement, int meas_N, double* sensor, int sensor_N, double var)
+{
+    if(meas_N != sensor_N){
+        return -1;
+    }
+
+    double prob = 1.0;
+
+    for(int i = 0 ; i < meas_N ; i++){
+        prob*= utility::get_gaussian_probability(measurement[i], var, sensor[i]);
+    }
+
+    return prob;
+}
+
+
 double utility::evaluation(Robot *r, std::vector<particle> *p)
 {
     //Calculate the mean error of the system
@@ -46,15 +62,6 @@ double utility::evaluation(Robot *r, std::vector<particle> *p)
         sum += err;
     }
     return sum / p->size();
-}
-
-void utility::p0_pos(Robot *r, std::vector<particle> *p)
-{
-    //Calculate the mean error of the system
-    double sum = 0.0;
-    if(p->size() > 0){
-        std::cout << "Particle 0 pos:\n" << (*p)[0].r.get_x() << "," << (*p)[0].r.get_y() << std::endl;
-    }
 }
 
 void utility::visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, std::vector<Point>& map)

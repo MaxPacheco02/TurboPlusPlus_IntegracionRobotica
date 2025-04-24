@@ -1,18 +1,14 @@
 #include "MCL.h"
 #include "utility.h"
 #include <assert.h>
+#include "cuda_kernels.h"
 
-particle::particle(Robot rr, double ww) : r(rr), w(ww) {}
-
-command::command(double f, double t) : forward(f), turn(t) {}
-command::command() {}
-
-MCL::MCL(std::vector<particle> X, command U, std::vector<double> Z, std::vector<Point> map) : X__(X), U__(U), Z__(Z), map__(map), max_weight__(0.0) {}
+MCL::MCL(particle *X, int X_N, command U, double *Z, int Z_N, Point *map, int map_N) : 
+    X__(X), X_N__(X_N), U__(U), Z__(Z), Z_N__(Z_N), map__(map), map_N__(map_N), max_weight__(0.0) {}
 
 void MCL::motion_update()
 {
-    // update particles with command input
-    std::for_each(X__.begin(), X__.end(), [this](particle &ptc) { ptc.r.move(U__.turn, U__.forward); });
+    motion_nvcc(X__, X_N__, U__);
 }
 
 void MCL::sensor_update()
@@ -20,31 +16,16 @@ void MCL::sensor_update()
     // keep track of maximum weight for resampling
     max_weight__ = 0.0;
     // update weights with probability of each observations using pdf
-    std::for_each(X__.begin(), X__.end(), [this](particle &ptc) {
+    std::for_each(X__.begin(), X__.end(), [this](particle &ptc)
+                  {
         // sense environemnt with each particle
         std::vector<double> meas = ptc.r.sense(map__,ptc.r.get_pose_msg(),false);
-        //std::cout << ptc.r.get_sensor_readings() << std::endl;
         // calculate probability of robot measurements Z considering a pdf of mean observed distance from map and variance of sensor noise
-        ptc.w = get_measurement_prob(meas);
+        ptc.w = utility::get_measurement_prob(meas);
         // update max weight
-        ptc.w > max_weight__ ? max_weight__ = ptc.w : max_weight__ += 0.0;
-    });
+        ptc.w > max_weight__ ? max_weight__ = ptc.w : max_weight__ += 0.0; });
 }
 
-double MCL::get_measurement_prob(std::vector<double> measurement)
-{
-    assert(measurement.size() == Z__.size());
-    // get sensor noise
-    double var = X__[0].r.get_sensor_noise();
-    double prob = 1.0;
-    for (int i = 0; i < Z__.size(); ++i)
-    {
-        // compute the probability of observing Z[i]s given sensed distance from known map and sensor noise
-        prob *= utility::get_gaussian_probability(measurement[i], var, Z__[i]);
-    }
-    //std::cout << "[Prob] " << prob << std::endl;
-    return prob;
-}
 
 std::vector<particle> MCL::resample()
 {
@@ -65,10 +46,10 @@ std::vector<particle> MCL::resample()
             beta -= X__[index].w;
             index = (index + 1) % X__.size();
         }
-        //std::cout << index << std::endl;
-        // select particle at index
+        // std::cout << index << std::endl;
+        //  select particle at index
         p[i] = X__[index];
-        //std::cout << p[i].r.get_pose() << std::endl;
+        // std::cout << p[i].r.get_pose() << std::endl;
     }
     // return new particle set
     return p;

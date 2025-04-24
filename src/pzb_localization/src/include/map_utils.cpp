@@ -59,9 +59,10 @@ uint32_t packRGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 
 // Method to fill a pc2 msg from an array containing data coordinates
 void fill_pc(sensor_msgs::msg::PointCloud2& pc_msg,
-    const std::vector<Point>& pc_data, uint8_t r, uint8_t g, uint8_t b, uint8_t a, double z) 
+    const Point* map_arr, int map_size,
+    uint8_t r, uint8_t g, uint8_t b, uint8_t a, double z) 
 {
-    resize_pc(pc_msg, pc_data.size());
+    resize_pc(pc_msg, map_size);
 
     sensor_msgs::PointCloud2Iterator<float> iter_x(pc_msg, "x");
     sensor_msgs::PointCloud2Iterator<float> iter_y(pc_msg, "y");
@@ -70,9 +71,9 @@ void fill_pc(sensor_msgs::msg::PointCloud2& pc_msg,
 
     uint32_t color = packRGBA(r,g,b,a);
 
-    for(int i = 0 ; i < pc_data.size() ; i++){
-        *iter_x = pc_data[i].x;
-        *iter_y = pc_data[i].y;
+    for(int i = 0 ; i < map_size ; i++){
+        *iter_x = map_arr[i].x;
+        *iter_y = map_arr[i].y;
         *iter_z = z;
         *iter_rgba = color;
         
@@ -142,18 +143,79 @@ std::vector<Point> map2vec(const nav_msgs::msg::OccupancyGrid& map)
     return points;
 }
 
+// Define a reasonable max number of points (e.g., 10% of map size as before)
+int map2arr(const nav_msgs::msg::OccupancyGrid& map, Point* points_array, int max_points)
+{
+    if (map.data.empty()) {
+        return 0;
+    }
+
+    const double origin_x = map.info.origin.position.x;
+    const double origin_y = map.info.origin.position.y;
+    const double resolution = map.info.resolution;
+    const int width = map.info.width;
+    const int height = map.info.height;
+
+    const int dx[4] = {1, 0, -1, 0};
+    const int dy[4] = {0, 1, 0, -1};
+    const int neighbor_offsets[4] = {1, width, -1, -width};
+
+    int count = 0;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int idx = y * width + x;
+
+            // Skip non-occupied cells
+            if (map.data[idx] < 100 && map.data[idx] >= 0) {
+                continue;
+            }
+
+            // Check neighbors more efficiently
+            for (int n = 0; n < 4; n++) {
+                int nx = x + dx[n];
+                int ny = y + dy[n];
+
+                // Skip if outside map
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+                    continue;
+                }
+
+                int neighbor_idx = idx + neighbor_offsets[n];
+
+                // If neighbor is free space, this is a boundary
+                if (map.data[neighbor_idx] == 0) {
+                    if (count >= max_points) {
+                        // Prevent overflow
+                        return count;
+                    }
+
+                    // Convert to world coordinates
+                    points_array[count].x = origin_x + (x + 0.5) * resolution;
+                    points_array[count].y = origin_y + (y + 0.5) * resolution;
+                    count++;
+                    break;
+                }
+            }
+        }
+    }
+
+    return count;  // Return how many points were filled
+}
+
 void compute_raycast(
-    const std::vector<Point>& map, std::vector<Point>& visible_points,
+    const Point* map, int map_N, Point* local_map,
     const geometry_msgs::msg::Pose& source_pose, double angle_separation
 ){
     Point source{source_pose.position.x, source_pose.position.y};
 
     // Convert map points into polar coordinates (distance, angle)
     std::vector<PCDiff> pc_data;
-    pc_data.reserve(map.size());
+    pc_data.reserve(map_N);
 
-    for (const auto& pt : map)
+    for (int i = 0 ; i < map_N ; i++)
     {
+        Point pt = map[i];
         double dx = pt.x - source.x;
         double dy = pt.y - source.y;
         double dist = std::sqrt(dx * dx + dy * dy);
@@ -175,10 +237,6 @@ void compute_raycast(
         if (bin_idx >= num_rays) bin_idx = num_rays - 1;
         angle_bins[bin_idx].push_back(p);
     }
-
-    // Clear and reserve space for output
-    visible_points.clear();
-    visible_points.reserve(num_rays);
 
     // Wide angular threshold
     const double angle_threshold = 0.3 * angle_resolution;
@@ -208,6 +266,6 @@ void compute_raycast(
             }
         }
 
-        visible_points.push_back(closest_point);
+        local_map[i] = closest_point;
     }
 }

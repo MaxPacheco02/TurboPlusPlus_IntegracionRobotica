@@ -15,6 +15,21 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "tf2/LinearMath/Quaternion.h"
 
+struct particle
+{
+    particle(Robot r, double w);
+    Robot r;
+    double w;
+};
+
+struct command
+{
+    command();
+    command(double f, double t);
+    double forward;
+    double turn;
+};
+
 class Robot
 {
 public:
@@ -26,8 +41,7 @@ public:
     // Set robots state transition noise
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
     // Sense the environment with sensors
-    std::vector<double> sense(const std::vector<Point>& map, bool noise = true);
-    std::vector<double> sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise);
+    void sense(const Point *map, double *sensor, int map_N, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
     // Move the robot
     void move(double turn, double forward);
     // Update pose msg
@@ -44,8 +58,8 @@ public:
     double get_theta() const;
     // Get pose readings
     std::string get_pose();
-    // Get sensor readings
-    std::string get_sensor_readings(const std::vector<Point>& map);
+
+    const static int tpb__{1024};
 
 private:
     // robot states

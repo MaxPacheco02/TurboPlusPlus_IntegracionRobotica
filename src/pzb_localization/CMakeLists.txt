@@ -59,14 +59,19 @@ set(DEPENDENCIES
 message("cvplot_FOUND: ${cvplot_FOUND}")
 include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
 
+# Build a Static Library out of the kernel
+add_library(cuda_kernels STATIC
+  src/include/cuda_kernels.cu
+)
+
 add_executable(mcl_node 
   src/mcl_node.cpp
-  src/include/cuda_kernels.cu
-  )
+)
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
 target_link_libraries(mcl_node 
   cvplot
   CUDA::cudart
+  cuda_kernels
 )
 
 # Install Python executables

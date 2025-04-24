@@ -64,8 +64,14 @@ public:
                     return;
 
                 grid_map = msg;
-                map = map2vec(grid_map);
-                fill_pc(map_pc_msg, map, 0, 0, 255, 255, 0.0);
+
+                int max_map_size = msg.data.size() / 10;
+                map_size = max_map_size * sizeof(Point);
+                checkCuda(cudaMallocManaged(&map, map_size));
+
+                map_N = map2arr(grid_map, map, max_map_size);
+
+                fill_pc(map_pc_msg, map, map_N, 0, 0, 255, 255, 0.0);
             });
 
         map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
@@ -74,12 +80,24 @@ public:
 
         timer_ = this->create_wall_timer(10ms, std::bind(&MCLNode::update, this));
 
-        // Initialize PointCloud msgs
+        /*
+            ====================
+            Initialize ROS2 msgs
+            ====================
+        */
         init_pc_msg(map_pc_msg);
         init_pc_msg(local_map_pc_msg);
 
-        // Initialize MCL Odometry msg
         mcl_msg.header.frame_id = "odom";
+
+        pose.position = geometry_msgs::build<geometry_msgs::msg::Point>().x(0).y(0).z(0);
+        pose.orientation = geometry_msgs::build<geometry_msgs::msg::Quaternion>().x(0).y(0).z(0).w(1);
+
+        /*
+            ========================
+            Initialize MCL variables
+            ========================
+        */
 
         // Setup robot (MCL) variables
         robot.set_states(0.0, 0.0, 0.0);
@@ -87,48 +105,35 @@ public:
         // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
         robot.set_noise(0.05, 0.01, 0.1);
 
-        for (int i = 0; i < NUMBER_OF_PARTICLES; ++i)
+        // Initialize particle array
+        size_t particles_size = particle_N * sizeof(particle);
+        checkCuda(cudaMallocManaged(&particles, particles_size));
+        particle particle_tmp{robot, 0.0};
+
+        // Fill array with empty poses
+        for (int i = 0; i < particle_N; i++)
         {
-            particles.emplace_back(robot, 0.0);
+            particles[i] = particle_tmp;
         }
 
-        pose.position = geometry_msgs::build<geometry_msgs::msg::Point>().x(0).y(0).z(0);
-        pose.orientation = geometry_msgs::build<geometry_msgs::msg::Quaternion>().x(0).y(0).z(0).w(1);
-
-        // CUDA functionalities
-        size_t size = N * sizeof(float);
-
-        // allocate unified memory
-        checkCuda(cudaMallocManaged(&a, size));
-        checkCuda(cudaMallocManaged(&b, size));
-        checkCuda(cudaMallocManaged(&c, size));
-
-        // // cleanup
-        // checkCuda(cudaFree(a));
-        // checkCuda(cudaFree(b));
-        // checkCuda(cudaFree(c));
-
-        RCLCPP_INFO(get_logger(), "Done!");
+        // Initialize local map array
+        local_map_N = static_cast<int>(2.0 * M_PI / pc_ang_sep) + 1;
+        local_map_size = local_map_N * sizeof(Point);
+        checkCuda(cudaMallocManaged(&local_map, local_map_size));
     }
 
     void update()
     {
-        initWith(3, a, N);
-        initWith(4, b, N);
-        initWith(0, c, N);
-        launchAdd(c, a, b, N);
-        checkElementsAre(7, c, N);
-        
-        // mcl();
+        mcl();
 
-        // map_pc_msg.header.stamp = this->get_clock()->now();
-        // local_map_pc_msg.header.stamp = this->get_clock()->now();
-        // mcl_msg.header.stamp = this->get_clock()->now();
+        map_pc_msg.header.stamp = this->get_clock()->now();
+        local_map_pc_msg.header.stamp = this->get_clock()->now();
+        mcl_msg.header.stamp = this->get_clock()->now();
 
-        // map_pc_pub_->publish(map_pc_msg);
-        // local_map_pc_pub_->publish(local_map_pc_msg);
+        map_pc_pub_->publish(map_pc_msg);
+        local_map_pc_pub_->publish(local_map_pc_msg);
 
-        // mcl_pub_->publish(mcl_msg);
+        mcl_pub_->publish(mcl_msg);
 
         // std::cout << robot.get_pose() << std::endl;
     }
@@ -137,7 +142,7 @@ public:
     {
 
         // Update raycast pc2 msg
-        compute_raycast(map, local_map, pose, 9.0);
+        compute_raycast(map, local_map, pose, pc_ang_sep);
         fill_pc(local_map_pc_msg, local_map, 255, 0, 0, 255, 0.05);
 
         // Calculate linear displacement in global frame
@@ -160,13 +165,19 @@ public:
             control.turn += 2 * M_PI;
 
         // Execute movement (with noise)
+        // We don't care, it's just for the GUI
         // robot.move(control.turn, control.forward);
 
         // Read sensor
-        std::vector<double> z = robot.sense(map, pose, true);
+        double* z;
+        size_t sensor_size = local_map_N * sizeof(double);
+        checkCuda(cudaMallocManaged(&z, sensor_size));
+
+        // IRL: Real LiDAR's data
+        robot.sense(map, map_N, z, pc_ang_sep, pose, true);
 
         // Run MCL
-        std::vector<particle> belief = MCL(particles, control, z, map).resample();
+        particle* belief = MCL(particles, control, z, map).resample();
 
         // Visualize result
         // utility::visualization(&robot, 0, &particles, &belief, map);
@@ -177,6 +188,10 @@ public:
         mcl_msg.pose = get_pondered_pose(belief);
 
         last_pose = pose;
+
+        // Free malloc
+        checkCuda(cudaFree(z));
+
     }
 
 private:
@@ -196,17 +211,23 @@ private:
 
     rclcpp::TimerBase::SharedPtr timer_;
 
-    std::vector<Point> map, local_map;
+    std::vector<Point> local_map;
 
     Robot robot;
     command control;
-    std::vector<particle> particles;
-    int NUMBER_OF_PARTICLES = 500;
+    particle *particles;
+    int particle_N = 500;
 
-    // CUDA
-    float *a, *b, *c;
-    const int N{2 << 31};
+    double pc_ang_sep = 9.0;
 
+    // CUDA vars
+    size_t map_size;
+    int map_N;
+    Point *map;
+
+    size_t local_map_size;
+    int local_map_N;
+    Point *local_map;
 
     geometry_msgs::msg::PoseWithCovariance get_pondered_pose(
         const std::vector<particle> &particles)

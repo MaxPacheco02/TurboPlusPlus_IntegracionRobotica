@@ -1,8 +1,14 @@
 #include "robot.h"
+#include <cuda_runtime.h>
 
 double Robot::forward_noise__;
 double Robot::turn_noise__;
 double Robot::sense_noise__;
+
+particle::particle(Robot rr, double ww) : r(rr), w(ww) {}
+
+command::command(double f, double t) : forward(f), turn(t) {}
+command::command() {}
 
 Robot::Robot() {}
 
@@ -33,42 +39,25 @@ void Robot::set_noise(double new_f_noise, double new_t_noise, double new_s_noise
     sense_noise__ = new_s_noise;
 }
 
-std::vector<double> Robot::sense(const std::vector<Point>& map, bool noise)
+void Robot::sense(const Point *map, double *sensor, int map_N, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise)
 {
-    std::vector<Point> local_map;
-    compute_raycast(map, local_map, pose__, 9.0);
+    Point* local_map_;
+    int local_map_N = static_cast<int>(2.0 * M_PI / ang_sep) + 1;
+    size_t local_map_size = local_map_N * sizeof(double);
+    checkCuda(cudaMallocManaged(&local_map_, local_map_size));
 
-    std::vector<double> measurements;
+    compute_raycast(map, map_N, local_map_, ext_pose, ang_sep);
 
-    // iterate through landmarks
-    for (int i = 0; i < local_map.size(); i++)
+    // iterate through pointcloud, to add noise
+    for (int i = 0; i < local_map_N; i++)
     {
         // get Euclidean distance to each landmark and add noise to simulate range finder data
-        double m = sqrt(pow((local_map[i].x- x__), 2) + pow((local_map[i].y - y__), 2));
+        double m = sqrt(pow((local_map_[i].x - ext_pose.position.x), 2) + pow((local_map_[i].y - ext_pose.position.y), 2));
         noise ? m += utility::get_gaussian_random_number(0.0, sense_noise__) : m += 0.0;
-        measurements.push_back(m);
+        sensor[i] = m;
     }
 
-    return measurements;
-}
-
-std::vector<double> Robot::sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise)
-{
-    std::vector<Point> local_map;
-    compute_raycast(map, local_map, ext_pose, 9.0);
-
-    std::vector<double> measurements;
-
-    // iterate through landmarks
-    for (int i = 0; i < local_map.size(); i++)
-    {
-        // get Euclidean distance to each landmark and add noise to simulate range finder data
-        double m = sqrt(pow((local_map[i].x- ext_pose.position.x), 2) + pow((local_map[i].y - ext_pose.position.y), 2));
-        noise ? m += utility::get_gaussian_random_number(0.0, sense_noise__) : m += 0.0;
-        measurements.push_back(m);
-    }
-
-    return measurements;
+    checkCuda(cudaFree(local_map_));
 }
 
 void Robot::move(double turn, double forward)
@@ -84,12 +73,13 @@ void Robot::move(double turn, double forward)
     update_pose_msg();
 }
 
-void Robot::update_pose_msg(){
+void Robot::update_pose_msg()
+{
     pose__.position.x = x__;
     pose__.position.y = y__;
-    
+
     tf2::Quaternion q;
-    q.setRPY(0, 0, orientation__);  // Roll, Pitch, Yaw
+    q.setRPY(0, 0, orientation__); // Roll, Pitch, Yaw
     tf2::convert(q, pose__.orientation);
 }
 
@@ -97,15 +87,6 @@ std::string Robot::get_pose()
 {
     std::string pose = std::string("[") + std::string("X=") + std::to_string(x__) + std::string(", Y=") + std::to_string(y__) + std::string(" Theta=") + std::to_string(orientation__) + std::string("]");
     return pose;
-}
-
-std::string Robot::get_sensor_readings(const std::vector<Point>& map)
-{
-    std::vector<double> m = sense(map, true);
-    std::string readings = std::string("[");
-    std::for_each(m.begin(), m.end(), [&readings](double mm) { readings += std::string(" ") + std::to_string(mm); });
-    readings += std::string(" ]");
-    return readings;
 }
 
 double Robot::get_sensor_noise() { return sense_noise__; }

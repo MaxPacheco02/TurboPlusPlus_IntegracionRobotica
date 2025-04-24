@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <cuda_runtime.h>
 
+#include "robot.h"
+
 extern "C" cudaError_t checkCuda(cudaError_t result)
 {
   if (result != cudaSuccess)
@@ -44,12 +46,28 @@ __global__ void addVectorsInto(float *result, float *a, float *b, int N)
     result[i] = a[i] + b[i];
 }
 
+__global__ void move_particles(particle *X, int N, command U)
+{
+  int i = threadIdx.x + blockIdx.x * blockDim.x;
+  if (i < N)
+    X[i].r.move(U.turn, U.forward);
+}
+
 extern "C" void launchAdd(float *c, float *a, float *b, int N)
 {
-  const int threads_per_block = 1024;
+  const int threads_per_block = Robot::tpb__;
   const int number_of_blocks = (N + threads_per_block - 1) / threads_per_block;
 
   addVectorsInto<<<number_of_blocks, threads_per_block>>>(c, a, b, N);
+
+  checkCuda(cudaDeviceSynchronize());
+}
+
+extern "C" void motion_nvcc(particle *X, int X_N, command U){
+  const int threads_per_block = Robot::tpb__;
+  const int number_of_blocks = (X_N + threads_per_block - 1) / threads_per_block;
+
+  move_particles<<<number_of_blocks, threads_per_block>>>(X, X_N, U);
 
   checkCuda(cudaDeviceSynchronize());
 }
