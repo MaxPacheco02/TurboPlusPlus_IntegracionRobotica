@@ -18,27 +18,17 @@
 #include <string>
 #include <array>
 
+// #include "include/map_utils.h"
+// #include "include/robot.h"
 #include "include/map_utils.h"
-#include "include/map_utils.cpp"
-
 #include "include/robot.h"
+#include "include/robot_utils.h"
 #include "include/MCL.h"
 #include "include/utility.h"
-
-#include "include/robot.cpp"
-#include "include/MCL.cpp"
-#include "include/utility.cpp"
-
 #include <cuda_runtime.h>
+#include "cuda_kernels.h"
+// #include "include/utility.h"
 
-extern "C"
-{
-    cudaError_t checkCuda(cudaError_t result);
-    void initWith(float, float *, int);
-    void launchAdd(float *, float *, float *, int);
-    void checkElementsAre(float, float *, int);
-    void runTest(float *c);
-}
 
 using namespace std::chrono_literals;
 
@@ -106,18 +96,18 @@ public:
         robot.set_noise(0.05, 0.01, 0.1);
 
         // Initialize particle array
-        size_t particles_size = particle_N * sizeof(particle);
+        particles_size = particles_N * sizeof(particle);
         checkCuda(cudaMallocManaged(&particles, particles_size));
         particle particle_tmp{robot, 0.0};
 
         // Fill array with empty poses
-        for (int i = 0; i < particle_N; i++)
+        for (int i = 0; i < particles_N; i++)
         {
             particles[i] = particle_tmp;
         }
 
         // Initialize local map array
-        local_map_N = static_cast<int>(2.0 * M_PI / pc_ang_sep) + 1;
+        local_map_N = static_cast<int>(360.0 / pc_ang_sep);
         local_map_size = local_map_N * sizeof(Point);
         checkCuda(cudaMallocManaged(&local_map, local_map_size));
     }
@@ -125,25 +115,24 @@ public:
     void update()
     {
         mcl();
-
+        
+        // The rest of your function
         map_pc_msg.header.stamp = this->get_clock()->now();
         local_map_pc_msg.header.stamp = this->get_clock()->now();
         mcl_msg.header.stamp = this->get_clock()->now();
-
+    
         map_pc_pub_->publish(map_pc_msg);
         local_map_pc_pub_->publish(local_map_pc_msg);
-
+    
         mcl_pub_->publish(mcl_msg);
-
-        // std::cout << robot.get_pose() << std::endl;
     }
 
     void mcl()
     {
 
         // Update raycast pc2 msg
-        compute_raycast(map, local_map, pose, pc_ang_sep);
-        fill_pc(local_map_pc_msg, local_map, 255, 0, 0, 255, 0.05);
+        compute_raycast(map, map_N, local_map, pose, pc_ang_sep);
+        fill_pc(local_map_pc_msg, local_map, local_map_N, 255, 0, 0, 255, 0.05);
 
         // Calculate linear displacement in global frame
         double dx = pose.position.x - last_pose.position.x;
@@ -169,29 +158,36 @@ public:
         // robot.move(control.turn, control.forward);
 
         // Read sensor
-        double* z;
+        double *z;
         size_t sensor_size = local_map_N * sizeof(double);
         checkCuda(cudaMallocManaged(&z, sensor_size));
 
+        Point* local_map_tmp;
+        checkCuda(cudaMallocManaged(&local_map_tmp, local_map_size));
+    
         // IRL: Real LiDAR's data
-        robot.sense(map, map_N, z, pc_ang_sep, pose, true);
+        robot.sense(map, map_N, local_map_tmp, local_map_N, z, pc_ang_sep, pose, true);
 
         // Run MCL
-        particle* belief = MCL(particles, control, z, map).resample();
+        particle *belief;
+        checkCuda(cudaMallocManaged(&belief, particles_size));
+
+        MCL(particles, particles_N, control, z, local_map_N, map, map_N, pc_ang_sep).resample(belief);    
 
         // Visualize result
         // utility::visualization(&robot, 0, &particles, &belief, map);
 
         // Update particles
-        particles = belief;
+        cp_particle_from_to(belief, particles, particles_N);
 
-        mcl_msg.pose = get_pondered_pose(belief);
+        mcl_msg.pose = get_pondered_pose();
 
         last_pose = pose;
 
         // Free malloc
+        checkCuda(cudaFree(belief));
+        checkCuda(cudaFree(local_map_tmp));
         checkCuda(cudaFree(z));
-
     }
 
 private:
@@ -211,12 +207,11 @@ private:
 
     rclcpp::TimerBase::SharedPtr timer_;
 
-    std::vector<Point> local_map;
-
     Robot robot;
     command control;
     particle *particles;
-    int particle_N = 500;
+    int particles_N = 500;
+    size_t particles_size;
 
     double pc_ang_sep = 9.0;
 
@@ -229,14 +224,13 @@ private:
     int local_map_N;
     Point *local_map;
 
-    geometry_msgs::msg::PoseWithCovariance get_pondered_pose(
-        const std::vector<particle> &particles)
+    geometry_msgs::msg::PoseWithCovariance get_pondered_pose()
     {
         geometry_msgs::msg::PoseWithCovariance pose_with_cov;
         geometry_msgs::msg::Point position;
         geometry_msgs::msg::Quaternion orientation;
 
-        if (particles.empty())
+        if (particles_N == 0)
         {
             return pose_with_cov;
         }
@@ -248,12 +242,12 @@ private:
         double cos_weighted_sum = 0.0;
         double sin_weighted_sum = 0.0;
 
-        for (const auto &p : particles)
+        for (int i = 0; i < particles_N; i++)
         {
-            double x = p.r.get_x();
-            double y = p.r.get_y();
-            double theta = p.r.get_theta();
-            double weight = p.w;
+            double x = particles[i].r.get_x();
+            double y = particles[i].r.get_y();
+            double theta = particles[i].r.get_theta();
+            double weight = particles[i].w;
 
             x_weighted_sum += x * weight;
             y_weighted_sum += y * weight;
@@ -266,16 +260,14 @@ private:
         // Handle case where weights sum to zero
         if (total_weight <= 0.0)
         {
-            if (!particles.empty())
-            {
-                // Fallback: use the first particle
-                position.x = particles[0].r.get_x();
-                position.y = particles[0].r.get_y();
+            // Fallback: use the first particle
+            position.x = particles[0].r.get_x();
+            position.y = particles[0].r.get_y();
 
-                tf2::Quaternion q;
-                q.setRPY(0, 0, particles[0].r.get_theta());
-                tf2::convert(q, orientation);
-            }
+            tf2::Quaternion q;
+            q.setRPY(0, 0, particles[0].r.get_theta());
+            tf2::convert(q, orientation);
+
             pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>().position(position).orientation(orientation);
             return pose_with_cov;
         }
@@ -302,12 +294,12 @@ private:
         std::array<double, 36> cov;
         std::fill(cov.begin(), cov.end(), 0.0);
 
-        for (const auto &p : particles)
+        for (int i = 0 ; i < particles_N ; i++)
         {
-            double x = p.r.get_x();
-            double y = p.r.get_y();
-            double theta = p.r.get_theta();
-            double weight = p.w / total_weight; // Normalize weight
+            double x = particles[i].r.get_x();
+            double y = particles[i].r.get_y();
+            double theta = particles[i].r.get_theta();
+            double weight = particles[i].w / total_weight; // Normalize weight
 
             // Handle angle difference properly (considering circular nature)
             double theta_diff = theta - theta_mean;

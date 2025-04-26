@@ -1,15 +1,18 @@
 #ifndef MCL_H
 #define MCL_H
 
-#include "robot.h"
+#include "robot_utils.h"
+#include <assert.h>
+#include "cuda_kernels.h"
 
 class MCL
 {
 public:
-    MCL(particle* X, command U, 
-        double* Z, Point* map); 
+    MCL(particle *X, int X_N, command U, double *Z, 
+        int Z_N, Point *map, int map_N, double ang_sep); 
     // resample the particles and return the new belief
-    particle* resample();
+    void resample(particle* new_belief);
+
 
 private:
     // map landmarks
@@ -25,6 +28,8 @@ private:
     int X_N__;
     //maximum weight
     double max_weight__;
+    // LiDAR separation angle
+    double ang_sep__;
     // update
     void motion_update();
     // predict

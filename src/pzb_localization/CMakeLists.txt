@@ -32,6 +32,8 @@ find_package(cvplot REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 set(CMAKE_CUDA_ARCHITECTURES 89)
 
+# Set the necessary CUDA flags
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
 
 set(DEPENDENCIES
   ament_cmake
@@ -52,33 +54,51 @@ set(DEPENDENCIES
   pzb_msgs
   OpenCV
   cv_bridge
-
-  CUDAToolkit
 )
 
 message("cvplot_FOUND: ${cvplot_FOUND}")
 include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
 
-# Build a Static Library out of the kernel
-add_library(cuda_kernels STATIC
+# Get all include directories from dependencies
+foreach(dependency ${DEPENDENCIES})
+  list(APPEND DEPENDENCY_INCLUDE_DIRS ${${dependency}_INCLUDE_DIRS})
+endforeach()
+
+# Set include directories for all code
+include_directories(
+  ${PROJECT_SOURCE_DIR}/src/include
+  ${CUDAToolkit_INCLUDE_DIRS}
+  ${DEPENDENCY_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
+  /opt/ros/humble/include  # Adjust this if using a different ROS distro
+)
+
+# Compile all sources directly into the executable
+add_executable(mcl_node 
+  src/mcl_node.cpp
+  src/include/robot.cpp
+  src/include/map_utils.cpp
+  src/include/robot_utils.cpp
+  src/include/utility.cpp
+  src/include/MCL.cpp
   src/include/cuda_kernels.cu
 )
 
-add_executable(mcl_node 
-  src/mcl_node.cpp
+# Set CUDA properties
+set_target_properties(mcl_node PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  POSITION_INDEPENDENT_CODE ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
+
+# Link dependencies
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
 target_link_libraries(mcl_node 
   cvplot
   CUDA::cudart
-  cuda_kernels
 )
 
-# Install Python executables
-install(PROGRAMS
-DESTINATION lib/${PROJECT_NAME}
-)
-
+# Install targets
 install(TARGETS
   mcl_node
   DESTINATION lib/${PROJECT_NAME}
@@ -89,14 +109,10 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
 )
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()

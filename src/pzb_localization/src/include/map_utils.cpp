@@ -59,10 +59,10 @@ uint32_t packRGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 
 // Method to fill a pc2 msg from an array containing data coordinates
 void fill_pc(sensor_msgs::msg::PointCloud2& pc_msg,
-    const Point* map_arr, int map_size,
+    const Point* map_, int map_N,
     uint8_t r, uint8_t g, uint8_t b, uint8_t a, double z) 
 {
-    resize_pc(pc_msg, map_size);
+    resize_pc(pc_msg, map_N);
 
     sensor_msgs::PointCloud2Iterator<float> iter_x(pc_msg, "x");
     sensor_msgs::PointCloud2Iterator<float> iter_y(pc_msg, "y");
@@ -71,9 +71,9 @@ void fill_pc(sensor_msgs::msg::PointCloud2& pc_msg,
 
     uint32_t color = packRGBA(r,g,b,a);
 
-    for(int i = 0 ; i < map_size ; i++){
-        *iter_x = map_arr[i].x;
-        *iter_y = map_arr[i].y;
+    for(int i = 0 ; i < map_N ; i++){
+        *iter_x = map_[i].x;
+        *iter_y = map_[i].y;
         *iter_z = z;
         *iter_rgba = color;
         

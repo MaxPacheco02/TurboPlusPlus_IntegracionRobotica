@@ -15,45 +15,32 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "tf2/LinearMath/Quaternion.h"
 
-struct particle
-{
-    particle(Robot r, double w);
-    Robot r;
-    double w;
-};
-
-struct command
-{
-    command();
-    command(double f, double t);
-    double forward;
-    double turn;
-};
+#include <cuda_runtime.h>
 
 class Robot
 {
 public:
     Robot();
     
-    Robot(geometry_msgs::msg::Pose pose);
     // Set robot's states
     void set_states(double new_x, double new_y, double new_orient);
     // Set robots state transition noise
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
     // Sense the environment with sensors
-    void sense(const Point *map, double *sensor, int map_N, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
+    __host__ __device__ void sense(const Point *map, int map_N, Point* local_map, int local_map_N, 
+        double *sensor, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
     // Move the robot
-    void move(double turn, double forward);
+    __host__ __device__ void move(double turn, double forward);
     // Update pose msg
     void update_pose_msg();
     // get sensor noise
-    double get_sensor_noise();
+    __host__ __device__ double get_sensor_noise();
     // get x
     double get_x() const;
     // get y
     double get_y() const;
     // get pose msg
-    geometry_msgs::msg::Pose get_pose_msg() const;
+    __host__ __device__ geometry_msgs::msg::Pose get_pose_msg() const;
 
     double get_theta() const;
     // Get pose readings
@@ -61,13 +48,14 @@ public:
 
     const static int tpb__{1024};
 
+    double x__;
+    double y__;
+    double orientation__;
+
 private:
     // robot states
     geometry_msgs::msg::Pose pose__;
 
-    double x__;
-    double y__;
-    double orientation__;
     // noise
     static double forward_noise__;
     static double turn_noise__;
