@@ -2,38 +2,34 @@
 #define MCL_H
 
 #include "robot_utils.h"
-#include <assert.h>
 #include "cuda_kernels.h"
 
-class MCL
-{
+/**
+ * Monte Carlo Localization implementation
+ */
+class MCL {
 public:
-    MCL(particle *X, int X_N, command U, double *Z, 
-        int Z_N, Point *map, int map_N, double ang_sep); 
-    // resample the particles and return the new belief
+    MCL(particle* X, int X_N, command U, double* Z, 
+        int Z_N, Point* map, int map_N, double ang_sep);
+
     void resample(particle* new_belief);
 
-
 private:
-    // map landmarks
-    Point* map__;
-    int map_N__;
-    // robot sensor measurements
-    double* Z__;
-    int Z_N__;
-    // actuation command
-    command U__;
-    // belief
-    particle* X__;
-    int X_N__;
-    //maximum weight
-    double max_weight__;
-    // LiDAR separation angle
-    double ang_sep__;
-    // update
-    void motion_update();
-    // predict
-    void sensor_update();
+    void motionUpdate();
+    void sensorUpdate();
+    void resampleParticles(particle* new_belief);
+    void normalizeWeights();
+    double findMaxWeight() const;
+
+    particle* particles_;
+    int num_particles_;
+    command cmd_;
+    double* measurements_;
+    int num_measurements_;
+    Point* map_;
+    int num_map_points_;
+    double angle_sep_;
+    double max_weight_;
 };
 
-#endif /* MCL_H */
+#endif // MCL_H

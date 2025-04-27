@@ -33,7 +33,7 @@ find_package(CUDAToolkit REQUIRED)
 set(CMAKE_CUDA_ARCHITECTURES 89)
 
 # Set the necessary CUDA flags
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr -std=c++14")
 
 set(DEPENDENCIES
   ament_cmake
@@ -82,6 +82,7 @@ add_executable(mcl_node
   src/include/utility.cpp
   src/include/MCL.cpp
   src/include/cuda_kernels.cu
+  src/include/cuda_utils.cpp
 )
 
 # Set CUDA properties

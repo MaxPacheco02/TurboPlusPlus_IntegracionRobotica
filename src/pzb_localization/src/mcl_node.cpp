@@ -1,355 +1,325 @@
-#include "rclcpp/rclcpp.hpp"
-
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-
-#include "sensor_msgs/msg/point_cloud2.hpp"
-#include "sensor_msgs/point_cloud2_iterator.hpp"
-#include "sensor_msgs/msg/point_field.hpp"
-
-#include "geometry_msgs/msg/pose.hpp"
-#include "geometry_msgs/msg/point.hpp"
-#include "geometry_msgs/msg/quaternion.hpp"
-
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2/utils.hpp"
-
+#include "mcl_node.h"
 #include <chrono>
-#include <string>
-#include <array>
-
-// #include "include/map_utils.h"
-// #include "include/robot.h"
-#include "include/map_utils.h"
-#include "include/robot.h"
-#include "include/robot_utils.h"
-#include "include/MCL.h"
-#include "include/utility.h"
-#include <cuda_runtime.h>
-#include "cuda_kernels.h"
-// #include "include/utility.h"
-
 
 using namespace std::chrono_literals;
 
-class MCLNode : public rclcpp::Node
-{
-public:
-    MCLNode() : Node("mcl_node")
-    {
-        using namespace std::placeholders;
+MCLNode::MCLNode() : Node("mcl_node") {
+    initializeParameters();
+    initializePublishersAndSubscribers();
+    initializeMessages();
+    initializeMCLComponents();
+}
 
-        odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/pzb/odom", 10,
-            [this](const nav_msgs::msg::Odometry &msg)
-            {
-                pose = msg.pose.pose;
-            });
+MCLNode::~MCLNode() {
+    if (map_ != nullptr) cudaFree(map_);
+    if (local_map_ != nullptr) cudaFree(local_map_);
+    if (particles_ != nullptr) cudaFree(particles_);
+    if (belief_ != nullptr) cudaFree(belief_);
+    if (z_ != nullptr) cudaFree(z_);
+    if (local_map_tmp_ != nullptr) cudaFree(local_map_tmp_);
+}
 
-        map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-            "/pzb/map", 10,
-            [this](const nav_msgs::msg::OccupancyGrid &msg)
-            {
-                if (grid_map.data.size() == msg.data.size())
-                    return;
+void MCLNode::initializeParameters() {
+    particles_N_ = 1000;
+    pc_ang_sep_ = 9.0;  // degrees
+    update_rate_ = 100; // Hz
+}
 
-                grid_map = msg;
+void MCLNode::initializePublishersAndSubscribers() {
+    // Create publishers
+    map_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+        "/pzb/map_pc", 10);
+    local_map_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+        "/pzb/pc", 10);
+    mcl_pub_ = create_publisher<nav_msgs::msg::Odometry>(
+        "/mcl/odom", 10);
 
-                int max_map_size = msg.data.size() / 10;
-                map_size = max_map_size * sizeof(Point);
-                checkCuda(cudaMallocManaged(&map, map_size));
+    // Create subscribers
+    odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+        "/pzb/odom", 10,
+        std::bind(&MCLNode::odomCallback, this, std::placeholders::_1));
 
-                map_N = map2arr(grid_map, map, max_map_size);
+    map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
+        "/pzb/map", 10,
+        std::bind(&MCLNode::mapCallback, this, std::placeholders::_1));
 
-                fill_pc(map_pc_msg, map, map_N, 0, 0, 255, 255, 0.0);
-            });
+    // Create timer
+    timer_ = create_wall_timer(
+        std::chrono::milliseconds(1000/update_rate_),
+        std::bind(&MCLNode::update, this));
+}
 
-        map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
-        local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10);
-        mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
+void MCLNode::initializeMessages() {
+    init_pc_msg(map_pc_msg_);
+    init_pc_msg(local_map_pc_msg_);
+    mcl_msg_.header.frame_id = "odom";
+    
+    // Initialize poses
+    pose_.position = geometry_msgs::build<geometry_msgs::msg::Point>()
+        .x(0.0).y(0.0).z(0.0);
+    pose_.orientation = geometry_msgs::build<geometry_msgs::msg::Quaternion>()
+        .x(0.0).y(0.0).z(0.0).w(1.0);
+    last_pose_ = pose_;
+}
 
-        timer_ = this->create_wall_timer(10ms, std::bind(&MCLNode::update, this));
+void MCLNode::initializeMCLComponents() {
+    // Initialize robot
+    robot_.set_states(0.0, 0.0, 0.0);
+    robot_.set_noise(0.05, 0.05, 0.1);
 
-        /*
-            ====================
-            Initialize ROS2 msgs
-            ====================
-        */
-        init_pc_msg(map_pc_msg);
-        init_pc_msg(local_map_pc_msg);
+    // Initialize CUDA memory
+    particles_size_ = particles_N_ * sizeof(particle);
+    local_map_N_ = static_cast<int>(360.0 / pc_ang_sep_);
+    local_map_size_ = local_map_N_ * sizeof(Point);
 
-        mcl_msg.header.frame_id = "odom";
+    // Allocate memory
+    checkCuda(cudaMallocManaged(&particles_, particles_size_));
+    checkCuda(cudaMallocManaged(&local_map_, local_map_size_));
+    checkCuda(cudaMallocManaged(&belief_, particles_size_));
+    checkCuda(cudaMallocManaged(&z_, local_map_N_ * sizeof(double)));
+    checkCuda(cudaMallocManaged(&local_map_tmp_, local_map_size_));
 
-        pose.position = geometry_msgs::build<geometry_msgs::msg::Point>().x(0).y(0).z(0);
-        pose.orientation = geometry_msgs::build<geometry_msgs::msg::Quaternion>().x(0).y(0).z(0).w(1);
-
-        /*
-            ========================
-            Initialize MCL variables
-            ========================
-        */
-
-        // Setup robot (MCL) variables
-        robot.set_states(0.0, 0.0, 0.0);
-
-        // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
-        robot.set_noise(0.05, 0.01, 0.1);
-
-        // Initialize particle array
-        particles_size = particles_N * sizeof(particle);
-        checkCuda(cudaMallocManaged(&particles, particles_size));
-        particle particle_tmp{robot, 0.0};
-
-        // Fill array with empty poses
-        for (int i = 0; i < particles_N; i++)
-        {
-            particles[i] = particle_tmp;
-        }
-
-        // Initialize local map array
-        local_map_N = static_cast<int>(360.0 / pc_ang_sep);
-        local_map_size = local_map_N * sizeof(Point);
-        checkCuda(cudaMallocManaged(&local_map, local_map_size));
+    // Initialize particles
+    particle initial_particle{robot_, 1.0/particles_N_};
+    for (int i = 0; i < particles_N_; i++) {
+        particles_[i] = initial_particle;
     }
 
-    void update()
-    {
-        mcl();
-        
-        // The rest of your function
-        map_pc_msg.header.stamp = this->get_clock()->now();
-        local_map_pc_msg.header.stamp = this->get_clock()->now();
-        mcl_msg.header.stamp = this->get_clock()->now();
+    map_ = nullptr;
+    map_N_ = 0;
+}
+
+void MCLNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
+    pose_ = msg->pose.pose;
+}
+
+void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    if (grid_map_.data.size() == msg->data.size()) return;
+
+    grid_map_ = *msg;
+    int max_map_size = msg->data.size() / 10;
+    map_size_ = max_map_size * sizeof(Point);
     
-        map_pc_pub_->publish(map_pc_msg);
-        local_map_pc_pub_->publish(local_map_pc_msg);
-    
-        mcl_pub_->publish(mcl_msg);
+    if (map_ != nullptr) {
+        checkCuda(cudaFree(map_));
     }
-
-    void mcl()
-    {
-
-        // Update raycast pc2 msg
-        compute_raycast(map, map_N, local_map, pose, pc_ang_sep);
-        fill_pc(local_map_pc_msg, local_map, local_map_N, 255, 0, 0, 255, 0.05);
-
-        // Calculate linear displacement in global frame
-        double dx = pose.position.x - last_pose.position.x;
-        double dy = pose.position.y - last_pose.position.y;
-
-        // Get yaw angles from quaternions
-        double yaw = tf2::getYaw(pose.orientation);
-        double yaw_last = tf2::getYaw(last_pose.orientation);
-
-        // Calculate forward motion in robot's local frame
-        // Project the displacement onto the robot's previous heading
-        control.forward = std::cos(yaw_last) * dx + std::sin(yaw_last) * dy;
-
-        // Calculate turning angle (handle wrapping around +/- PI)
-        control.turn = yaw - yaw_last;
-        if (control.turn > M_PI)
-            control.turn -= 2 * M_PI;
-        if (control.turn < -M_PI)
-            control.turn += 2 * M_PI;
-
-        // Execute movement (with noise)
-        // We don't care, it's just for the GUI
-        // robot.move(control.turn, control.forward);
-
-        // Read sensor
-        double *z;
-        size_t sensor_size = local_map_N * sizeof(double);
-        checkCuda(cudaMallocManaged(&z, sensor_size));
-
-        Point* local_map_tmp;
-        checkCuda(cudaMallocManaged(&local_map_tmp, local_map_size));
     
-        // IRL: Real LiDAR's data
-        robot.sense(map, map_N, local_map_tmp, local_map_N, z, pc_ang_sep, pose, true);
+    checkCuda(cudaMallocManaged(&map_, map_size_));
+    map_N_ = map2arr(grid_map_, map_, max_map_size);
+    fill_pc(map_pc_msg_, map_, map_N_, 0, 0, 255, 255, 0.0);
+}
 
-        // Run MCL
-        particle *belief;
-        checkCuda(cudaMallocManaged(&belief, particles_size));
+double normalize_angle(double angle) {
+    while (angle > M_PI) angle -= 2 * M_PI;
+    while (angle < -M_PI) angle += 2 * M_PI;
+    return angle;
+}
 
-        MCL(particles, particles_N, control, z, local_map_N, map, map_N, pc_ang_sep).resample(belief);    
+void MCLNode::calcControl() {
+    // Calculate displacement in global frame
+    double dx = pose_.position.x - last_pose_.position.x;
+    double dy = pose_.position.y - last_pose_.position.y;
 
-        // Visualize result
-        // utility::visualization(&robot, 0, &particles, &belief, map);
+    // Get yaw angles
+    double yaw = tf2::getYaw(pose_.orientation);
+    double yaw_last = tf2::getYaw(last_pose_.orientation);
 
-        // Update particles
-        cp_particle_from_to(belief, particles, particles_N);
+    // Calculate motion in robot's local frame
+    control_.forward = sqrt(dx*dx + dy*dy);
+    control_.turn = normalize_angle(yaw - yaw_last);
 
-        mcl_msg.pose = get_pondered_pose();
+    // Threshold for minimum movement to consider
+    const double min_move = 0.001;  // 1mm
+    const double min_turn = 0.001;  // ~0.057 degrees
 
-        last_pose = pose;
+    if (control_.forward < min_move) control_.forward = 0.0;
+    if (fabs(control_.turn) < min_turn) control_.turn = 0.0;
 
-        // Free malloc
-        checkCuda(cudaFree(belief));
-        checkCuda(cudaFree(local_map_tmp));
-        checkCuda(cudaFree(z));
-    }
+    // Detailed debug output
+    std::cout << "\nControl update details:" << std::endl;
+    std::cout << "Current pose: x=" << pose_.position.x 
+              << ", y=" << pose_.position.y 
+              << ", yaw=" << yaw << std::endl;
+    std::cout << "Last pose: x=" << last_pose_.position.x 
+              << ", y=" << last_pose_.position.y 
+              << ", yaw=" << yaw_last << std::endl;
+    std::cout << "Delta: dx=" << dx << ", dy=" << dy 
+              << ", dyaw=" << (yaw - yaw_last) << std::endl;
+    std::cout << "Control: forward=" << control_.forward 
+              << ", turn=" << control_.turn << std::endl;
+}
 
-private:
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pc_pub_, local_map_pc_pub_;
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mcl_pub_;
+void MCLNode::update() {
+    if (map_ == nullptr || map_N_ == 0) return;
 
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    // Debug last_pose_ update
+    std::cout << "\nBefore last_pose_ update:" << std::endl;
+    std::cout << "last_pose_: x=" << last_pose_.position.x 
+              << ", y=" << last_pose_.position.y 
+              << ", yaw=" << tf2::getYaw(last_pose_.orientation) << std::endl;
+    std::cout << "current pose_: x=" << pose_.position.x 
+              << ", y=" << pose_.position.y 
+              << ", yaw=" << tf2::getYaw(pose_.orientation) << std::endl;
 
-    geometry_msgs::msg::Pose last_pose, pose;
+    // Update visualization
+    compute_raycast(map_, map_N_, local_map_, pose_, pc_ang_sep_);
+    fill_pc(local_map_pc_msg_, local_map_, local_map_N_, 
+            255, 0, 0, 255, 0.05);
 
-    nav_msgs::msg::OccupancyGrid grid_map;
-    nav_msgs::msg::Odometry mcl_msg;
+    // Calculate control from odometry
+    calcControl();
 
-    sensor_msgs::msg::PointCloud2 map_pc_msg;
-    sensor_msgs::msg::PointCloud2 local_map_pc_msg;
+    // Get sensor readings
+    robot_.sense(map_, map_N_, local_map_tmp_, local_map_N_, 
+                z_, pc_ang_sep_, pose_, true);
 
-    rclcpp::TimerBase::SharedPtr timer_;
+    // Create MCL instance and update
+    MCL mcl(particles_, particles_N_, control_, z_, local_map_N_,
+            map_, map_N_, pc_ang_sep_);
+    mcl.resample(belief_);
 
-    Robot robot;
-    command control;
-    particle *particles;
-    int particles_N = 500;
-    size_t particles_size;
+    // Update particles
+    std::swap(particles_, belief_);
 
-    double pc_ang_sep = 9.0;
+    // Calculate and publish mean pose
+    mcl_msg_.pose = calculateMeanPose();
+    
+    // Save pose for next iteration
+    last_pose_ = pose_;
 
-    // CUDA vars
-    size_t map_size;
-    int map_N;
-    Point *map;
+    std::cout << "After last_pose_ update:" << std::endl;
+    std::cout << "last_pose_: x=" << last_pose_.position.x 
+              << ", y=" << last_pose_.position.y 
+              << ", yaw=" << tf2::getYaw(last_pose_.orientation) << std::endl;
+              
+    // Publish results
+    auto now = this->get_clock()->now();
+    map_pc_msg_.header.stamp = now;
+    local_map_pc_msg_.header.stamp = now;
+    mcl_msg_.header.stamp = now;
 
-    size_t local_map_size;
-    int local_map_N;
-    Point *local_map;
+    map_pc_pub_->publish(map_pc_msg_);
+    local_map_pc_pub_->publish(local_map_pc_msg_);
+    mcl_pub_->publish(mcl_msg_);
+}
 
-    geometry_msgs::msg::PoseWithCovariance get_pondered_pose()
-    {
-        geometry_msgs::msg::PoseWithCovariance pose_with_cov;
-        geometry_msgs::msg::Point position;
-        geometry_msgs::msg::Quaternion orientation;
-
-        if (particles_N == 0)
-        {
-            return pose_with_cov;
-        }
-
-        // Calculate weighted mean position and orientation
-        double total_weight = 0.0;
-        double x_weighted_sum = 0.0;
-        double y_weighted_sum = 0.0;
-        double cos_weighted_sum = 0.0;
-        double sin_weighted_sum = 0.0;
-
-        for (int i = 0; i < particles_N; i++)
-        {
-            double x = particles[i].r.get_x();
-            double y = particles[i].r.get_y();
-            double theta = particles[i].r.get_theta();
-            double weight = particles[i].w;
-
-            x_weighted_sum += x * weight;
-            y_weighted_sum += y * weight;
-            cos_weighted_sum += std::cos(theta) * weight;
-            sin_weighted_sum += std::sin(theta) * weight;
-
-            total_weight += weight;
-        }
-
-        // Handle case where weights sum to zero
-        if (total_weight <= 0.0)
-        {
-            // Fallback: use the first particle
-            position.x = particles[0].r.get_x();
-            position.y = particles[0].r.get_y();
-
-            tf2::Quaternion q;
-            q.setRPY(0, 0, particles[0].r.get_theta());
-            tf2::convert(q, orientation);
-
-            pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>().position(position).orientation(orientation);
-            return pose_with_cov;
-        }
-
-        // Calculate mean values
-        double x_mean = x_weighted_sum / total_weight;
-        double y_mean = y_weighted_sum / total_weight;
-        double theta_mean = std::atan2(
-            sin_weighted_sum / total_weight,
-            cos_weighted_sum / total_weight);
-
-        // Set the mean pose
-        position.x = x_mean;
-        position.y = y_mean;
-
-        tf2::Quaternion q;
-        q.setRPY(0, 0, theta_mean);
-        tf2::convert(q, orientation);
-
-        pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>().position(position).orientation(orientation);
-
-        // Calculate covariance matrix
-        // Initialize covariance matrix (6x6 for x, y, z, roll, pitch, yaw)
-        std::array<double, 36> cov;
-        std::fill(cov.begin(), cov.end(), 0.0);
-
-        for (int i = 0 ; i < particles_N ; i++)
-        {
-            double x = particles[i].r.get_x();
-            double y = particles[i].r.get_y();
-            double theta = particles[i].r.get_theta();
-            double weight = particles[i].w / total_weight; // Normalize weight
-
-            // Handle angle difference properly (considering circular nature)
-            double theta_diff = theta - theta_mean;
-            if (theta_diff > M_PI)
-                theta_diff -= 2 * M_PI;
-            if (theta_diff < -M_PI)
-                theta_diff += 2 * M_PI;
-
-            // Update covariance components (only for x, y, and yaw)
-            // Format is row-major [x, y, z, roll, pitch, yaw]
-            // x variance (index 0)
-            cov[0] += weight * (x - x_mean) * (x - x_mean);
-            // y-x covariance (index 1) and x-y covariance (index 6)
-            cov[1] += weight * (x - x_mean) * (y - y_mean);
-            cov[6] = cov[1]; // Symmetric matrix
-            // y variance (index 7)
-            cov[7] += weight * (y - y_mean) * (y - y_mean);
-            // x-yaw covariance (index 5) and yaw-x covariance (index 30)
-            cov[5] += weight * (x - x_mean) * theta_diff;
-            cov[30] = cov[5]; // Symmetric matrix
-            // y-yaw covariance (index 11) and yaw-y covariance (index 31)
-            cov[11] += weight * (y - y_mean) * theta_diff;
-            cov[31] = cov[11]; // Symmetric matrix
-            // yaw variance (index 35)
-            cov[35] += weight * theta_diff * theta_diff;
-        }
-
-        // Add small values to diagonal to ensure positive definiteness
-        const double min_variance = 1e-6;
-        cov[0] = std::max(cov[0], min_variance);   // x variance
-        cov[7] = std::max(cov[7], min_variance);   // y variance
-        cov[14] = min_variance;                    // z variance (unused)
-        cov[21] = min_variance;                    // roll variance (unused)
-        cov[28] = min_variance;                    // pitch variance (unused)
-        cov[35] = std::max(cov[35], min_variance); // yaw variance
-
-        // Set covariance
-        for (size_t i = 0; i < 36; ++i)
-        {
-            pose_with_cov.covariance[i] = cov[i];
-        }
-
+geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const {
+    geometry_msgs::msg::PoseWithCovariance pose_with_cov;
+    
+    if (particles_N_ == 0) {
         return pose_with_cov;
     }
-};
 
-int main(int argc, char *argv[])
-{
+    // Calculate weighted mean using stable numerics
+    double total_weight = 0.0;
+    double x_weighted_sum = 0.0;
+    double y_weighted_sum = 0.0;
+    double cos_weighted_sum = 0.0;
+    double sin_weighted_sum = 0.0;
+
+    for (int i = 0; i < particles_N_; i++) {
+        const double weight = particles_[i].w;
+        const double x = particles_[i].r.get_x();
+        const double y = particles_[i].r.get_y();
+        const double theta = particles_[i].r.get_theta();
+
+        x_weighted_sum += x * weight;
+        y_weighted_sum += y * weight;
+        cos_weighted_sum += std::cos(theta) * weight;
+        sin_weighted_sum += std::sin(theta) * weight;
+        total_weight += weight;
+    }
+
+    // Handle zero total weight case
+    if (total_weight <= 0.0) {
+        // Use first particle as fallback
+        geometry_msgs::msg::Point position;
+        position.x = particles_[0].r.get_x();
+        position.y = particles_[0].r.get_y();
+
+        tf2::Quaternion q;
+        q.setRPY(0, 0, particles_[0].r.get_theta());
+        geometry_msgs::msg::Quaternion orientation;
+        tf2::convert(q, orientation);
+
+        pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>()
+            .position(position)
+            .orientation(orientation);
+        return pose_with_cov;
+    }
+
+    // Calculate mean values
+    const double inv_weight = 1.0 / total_weight;
+    const double x_mean = x_weighted_sum * inv_weight;
+    const double y_mean = y_weighted_sum * inv_weight;
+    const double theta_mean = std::atan2(
+        sin_weighted_sum * inv_weight,
+        cos_weighted_sum * inv_weight
+    );
+
+    // Set mean pose
+    geometry_msgs::msg::Point position;
+    position.x = x_mean;
+    position.y = y_mean;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, theta_mean);
+    geometry_msgs::msg::Quaternion orientation;
+    tf2::convert(q, orientation);
+
+    pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>()
+        .position(position)
+        .orientation(orientation);
+
+    // Calculate covariance matrix
+    std::array<double, 36> cov;
+    std::fill(cov.begin(), cov.end(), 0.0);
+
+    for (int i = 0; i < particles_N_; i++) {
+        const double x = particles_[i].r.get_x();
+        const double y = particles_[i].r.get_y();
+        const double theta = particles_[i].r.get_theta();
+        const double normalized_weight = particles_[i].w * inv_weight;
+
+        // Handle angle difference properly
+        double theta_diff = theta - theta_mean;
+        if (theta_diff > M_PI) theta_diff -= 2 * M_PI;
+        if (theta_diff < -M_PI) theta_diff += 2 * M_PI;
+
+        const double dx = x - x_mean;
+        const double dy = y - y_mean;
+
+        // Update covariance components
+        cov[0] += normalized_weight * dx * dx;       // x variance
+        cov[1] += normalized_weight * dx * dy;       // x-y covariance
+        cov[6] = cov[1];                            // y-x covariance
+        cov[7] += normalized_weight * dy * dy;       // y variance
+        cov[5] += normalized_weight * dx * theta_diff;  // x-yaw covariance
+        cov[30] = cov[5];                           // yaw-x covariance
+        cov[11] += normalized_weight * dy * theta_diff; // y-yaw covariance
+        cov[31] = cov[11];                          // yaw-y covariance
+        cov[35] += normalized_weight * theta_diff * theta_diff; // yaw variance
+    }
+
+    // Ensure positive definiteness
+    constexpr double min_variance = 1e-6;
+    cov[0] = std::max(cov[0], min_variance);   // x variance
+    cov[7] = std::max(cov[7], min_variance);   // y variance
+    cov[14] = min_variance;                    // z variance
+    cov[21] = min_variance;                    // roll variance
+    cov[28] = min_variance;                    // pitch variance
+    cov[35] = std::max(cov[35], min_variance); // yaw variance
+
+    // Set covariance matrix
+    std::copy(cov.begin(), cov.end(), pose_with_cov.covariance.begin());
+
+    return pose_with_cov;
+}
+
+int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<MCLNode>());
+    auto node = std::make_shared<MCLNode>();
+    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

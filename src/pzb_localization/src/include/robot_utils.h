@@ -1,19 +1,24 @@
+
+// robot_utils.h
 #ifndef ROBOT_UTILS_H
 #define ROBOT_UTILS_H
 
 #include "robot.h"
 
-struct particle
-{
-    particle(Robot r, double w);
+/**
+ * Particle structure for particle filter
+ */
+struct particle {
+    particle(Robot r = Robot(), double w = 0.0) : r(r), w(w) {}
     Robot r;
     double w;
 };
 
-struct command
-{
-    command();
-    command(double f, double t);
+/**
+ * Command structure for robot motion
+ */
+struct command {
+    command(double f = 0.0, double t = 0.0) : forward(f), turn(t) {}
     double forward;
     double turn;
 };

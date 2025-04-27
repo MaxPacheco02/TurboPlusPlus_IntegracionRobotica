@@ -1,28 +1,29 @@
+// utility.h
 #ifndef UTILITY_H
 #define UTILITY_H
 
-#include <vector>
-
-#include <iostream>
-#include <math.h>
+#include <cuda_runtime.h>
 #include <random>
 
-#include <cuda_runtime.h>
+namespace utility {
 
-namespace utility
-{
-    // Get random number from normal distribution given its mean and variance
-    double get_gaussian_random_number(double mean, double var);
+/**
+ * Random number generation functions
+ */
+double get_gaussian_random_number(double mean, double var);
+double get_random_number();
 
-    __host__ __device__ double get_measurement_prob(double* measurement, double* sensor, int sensor_N, double var);
-    // get random number between [0,1.0]
-    double get_random_number();
-    // Get normal distribution probability of x given mean and variance
-    double get_gaussian_probability(double mean, double var, double x);
-    // evaluate each belief
-    // double evaluation(Robot *r, std::vector<particle> *belief);
-    // visualize the robot and particles
-    // void visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, std::vector<Point>& map);
+/**
+ * Probability computation functions
+ */
+double get_gaussian_probability(double mean, double var, double x);
+
+__host__ __device__ double get_measurement_prob(
+    double* measurement,
+    double* sensor,
+    int sensor_N,
+    double var);
+
 } // namespace utility
 
-#endif
+#endif // UTILITY_H

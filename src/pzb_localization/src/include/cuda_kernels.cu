@@ -1,393 +1,403 @@
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
+#include <stdio.h>
 #include "robot.h"
 #include "robot_utils.h"
 #include "utility.h"
 #include "map_utils.h"
 
-// Simple device-only structs - no ROS dependencies
-struct DevicePoint {
-    float x;
-    float y;
+extern cudaError_t checkCuda(cudaError_t result);
+
+// Constants moved to constant memory for faster access
+__constant__ float d_noise_params[3]; // forward_noise, turn_noise, sense_noise
+__constant__ int d_grid_params[2];    // number of rays, measurements per thread
+
+struct DeviceParticle
+{
+    float x, y, theta, weight;
 };
 
-// For device code only - simplified versions of your functions
-__device__ void device_move(float &x, float &y, float &orientation, 
-                           float turn, float forward)
+// Forward declarations of kernel functions
+__global__ void setupRandomStates(curandState *states, unsigned long seed, int N);
+__global__ void raycastKernel(const Point *map, int map_size, DeviceParticle *particles,
+                              float *measurements, int num_rays, double angle_sep);
+__global__ void moveParticlesKernel(DeviceParticle *particles, int N, float turn,
+                                    float forward, curandState *states);
+__global__ void calculateWeightsKernel(DeviceParticle *particles, float *measurements,
+                                       float *actual_measurements, int N, int num_rays);
+
+class CUDAMemoryManager
 {
-    orientation = fmodf((orientation + turn), (2.0f * 3.14159f));
-    x += forward * cosf(orientation);
-    y += forward * sinf(orientation);
-}
+private:
+    // Device pointers
+    DeviceParticle *d_particles = nullptr;
+    curandState *d_random_states = nullptr;
+    float *d_weights = nullptr;
+    Point *d_map = nullptr;
+    int d_map_size = 0;
 
-// Device kernels that operate on simplified data
-__global__ void device_move_particles(float *x, float *y, float *orientation, int N, 
-                                    float turn, float forward)
-{
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i < N) {
-        device_move(x[i], y[i], orientation[i], turn, forward);
-    }
-}
+    // Pinned host memory for efficient transfers
+    DeviceParticle *h_particles = nullptr;
+    float *h_weights = nullptr;
 
-// Device function to calculate distance between two points
-__device__ float device_distance(float x1, float y1, float x2, float y2) {
-    return sqrtf((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
-}
+public:
+    ~CUDAMemoryManager() { freeResources(); }
 
-// Device function for Gaussian probability
-__device__ float device_gaussian_probability(float mean, float var, float x) {
-    return expf(-(powf((mean - x), 2)) / (powf(var, 2)) / 2.0f) / sqrtf(2.0f * 3.14159f * (powf(var, 2)));
-}
-
-// Device function to calculate measurement probability
-__device__ float device_measurement_prob(float* measurement, float* sensor, int sensor_N, float var) {
-    float prob = 1.0f;
-    for(int i = 0; i < sensor_N; i++) {
-        prob *= device_gaussian_probability(measurement[i], var, sensor[i]);
-    }
-    return prob;
-}
-
-// Device kernel for sensing
-__global__ void device_sense_particles(float *x, float *y, float *orientation, float *weights,
-                                     float *measurements, int measurements_N,
-                                     float *map_x, float *map_y, int map_N,
-                                     float sensor_noise, int particle_N)
-{
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i < particle_N) {
-        // Simple measurement model for device code
-        float particle_measurements[40]; // Assuming max 40 measurements
-        
-        // In a real implementation, you would calculate measurements based on the map
-        // Here we're using a simplified approach
-        for (int j = 0; j < measurements_N; j++) {
-            // Find closest map point for this measurement angle
-            float min_dist = 1000000.0f;
-            for (int k = 0; k < map_N; k++) {
-                float dist = device_distance(x[i], y[i], map_x[k], map_y[k]);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                }
-            }
-            particle_measurements[j] = min_dist;
-        }
-        
-        // Calculate measurement probability
-        weights[i] = device_measurement_prob(particle_measurements, measurements, measurements_N, sensor_noise);
-    }
-}
-
-// Copy particles kernel
-__global__ void device_copy_particles(float *x_from, float *y_from, float *orientation_from, float *w_from,
-                                    float *x_to, float *y_to, float *orientation_to, float *w_to, 
-                                    int N)
-{
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i < N) {
-        x_to[i] = x_from[i];
-        y_to[i] = y_from[i];
-        orientation_to[i] = orientation_from[i];
-        w_to[i] = w_from[i];
-    }
-}
-
-// Wrapper functions that prepare data for device, call kernel, then copy back
-extern "C" void particles_motion(particle *X, int X_N, command U)
-{
-    // Allocate device memory
-    float *d_x, *d_y, *d_orientation;
-    cudaMalloc(&d_x, X_N * sizeof(float));
-    cudaMalloc(&d_y, X_N * sizeof(float));
-    cudaMalloc(&d_orientation, X_N * sizeof(float));
-    
-    // Copy data to device
-    float *h_x = new float[X_N];
-    float *h_y = new float[X_N];
-    float *h_orientation = new float[X_N];
-    
-    for (int i = 0; i < X_N; i++) {
-        h_x[i] = X[i].r.get_x();
-        h_y[i] = X[i].r.get_y();
-        h_orientation[i] = X[i].r.get_theta();
-    }
-    
-    cudaMemcpy(d_x, h_x, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y, h_y, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_orientation, h_orientation, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    
-    // Launch kernel
-    int blockSize = 256;
-    int numBlocks = (X_N + blockSize - 1) / blockSize;
-    device_move_particles<<<numBlocks, blockSize>>>(d_x, d_y, d_orientation, X_N, U.turn, U.forward);
-    
-    // Copy results back
-    cudaMemcpy(h_x, d_x, X_N * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_y, d_y, X_N * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_orientation, d_orientation, X_N * sizeof(float), cudaMemcpyDeviceToHost);
-    
-    // Update original particles
-    for (int i = 0; i < X_N; i++) {
-        X[i].r.set_states(h_x[i], h_y[i], h_orientation[i]);
-    }
-    
-    // Free memory
-    delete[] h_x;
-    delete[] h_y;
-    delete[] h_orientation;
-    cudaFree(d_x);
-    cudaFree(d_y);
-    cudaFree(d_orientation);
-}
-
-extern "C" void particles_sensing(particle *X, int X_N, double *Z, int Z_N, Point *map, int map_N, double ang_sep)
-{
-    // Allocate host memory
-    float *h_x = new float[X_N];
-    float *h_y = new float[X_N];
-    float *h_orientation = new float[X_N];
-    float *h_weights = new float[X_N];
-    
-    float *h_map_x = new float[map_N];
-    float *h_map_y = new float[map_N];
-    float *h_measurements = new float[Z_N];
-    
-    // Fill host arrays
-    for (int i = 0; i < X_N; i++) {
-        h_x[i] = X[i].r.get_x();
-        h_y[i] = X[i].r.get_y();
-        h_orientation[i] = X[i].r.get_theta();
-        h_weights[i] = X[i].w;
-    }
-    
-    for (int i = 0; i < map_N; i++) {
-        h_map_x[i] = map[i].x;
-        h_map_y[i] = map[i].y;
-    }
-    
-    for (int i = 0; i < Z_N; i++) {
-        h_measurements[i] = Z[i];
-    }
-    
-    // Allocate device memory
-    float *d_x, *d_y, *d_orientation, *d_weights;
-    float *d_map_x, *d_map_y, *d_measurements;
-    
-    cudaMalloc(&d_x, X_N * sizeof(float));
-    cudaMalloc(&d_y, X_N * sizeof(float));
-    cudaMalloc(&d_orientation, X_N * sizeof(float));
-    cudaMalloc(&d_weights, X_N * sizeof(float));
-    
-    cudaMalloc(&d_map_x, map_N * sizeof(float));
-    cudaMalloc(&d_map_y, map_N * sizeof(float));
-    cudaMalloc(&d_measurements, Z_N * sizeof(float));
-    
-    // Copy to device
-    cudaMemcpy(d_x, h_x, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y, h_y, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_orientation, h_orientation, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_weights, h_weights, X_N * sizeof(float), cudaMemcpyHostToDevice);
-    
-    cudaMemcpy(d_map_x, h_map_x, map_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_map_y, h_map_y, map_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_measurements, h_measurements, Z_N * sizeof(float), cudaMemcpyHostToDevice);
-    
-    // Get sensor noise from first particle (all particles have the same sensor noise)
-    float sensor_noise = X[0].r.get_sensor_noise();
-    
-    // Launch kernel
-    int blockSize = 256;
-    int numBlocks = (X_N + blockSize - 1) / blockSize;
-    device_sense_particles<<<numBlocks, blockSize>>>(
-        d_x, d_y, d_orientation, d_weights,
-        d_measurements, Z_N,
-        d_map_x, d_map_y, map_N,
-        sensor_noise, X_N
-    );
-    
-    // Copy results back
-    cudaMemcpy(h_weights, d_weights, X_N * sizeof(float), cudaMemcpyDeviceToHost);
-    
-    // Update original particles
-    for (int i = 0; i < X_N; i++) {
-        X[i].w = h_weights[i];
-    }
-    
-    // Free memory
-    delete[] h_x;
-    delete[] h_y;
-    delete[] h_orientation;
-    delete[] h_weights;
-    delete[] h_map_x;
-    delete[] h_map_y;
-    delete[] h_measurements;
-    
-    cudaFree(d_x);
-    cudaFree(d_y);
-    cudaFree(d_orientation);
-    cudaFree(d_weights);
-    cudaFree(d_map_x);
-    cudaFree(d_map_y);
-    cudaFree(d_measurements);
-}
-
-extern "C" void cp_particle_from_to(particle *p_from, particle *p_to, int p_N)
-{
-    // Allocate device memory
-    float *d_x_from, *d_y_from, *d_orientation_from, *d_w_from;
-    float *d_x_to, *d_y_to, *d_orientation_to, *d_w_to;
-    
-    cudaMalloc(&d_x_from, p_N * sizeof(float));
-    cudaMalloc(&d_y_from, p_N * sizeof(float));
-    cudaMalloc(&d_orientation_from, p_N * sizeof(float));
-    cudaMalloc(&d_w_from, p_N * sizeof(float));
-    
-    cudaMalloc(&d_x_to, p_N * sizeof(float));
-    cudaMalloc(&d_y_to, p_N * sizeof(float));
-    cudaMalloc(&d_orientation_to, p_N * sizeof(float));
-    cudaMalloc(&d_w_to, p_N * sizeof(float));
-    
-    // Copy data to device
-    float *h_x_from = new float[p_N];
-    float *h_y_from = new float[p_N];
-    float *h_orientation_from = new float[p_N];
-    float *h_w_from = new float[p_N];
-    
-    for (int i = 0; i < p_N; i++) {
-        h_x_from[i] = p_from[i].r.get_x();
-        h_y_from[i] = p_from[i].r.get_y();
-        h_orientation_from[i] = p_from[i].r.get_theta();
-        h_w_from[i] = p_from[i].w;
-    }
-    
-    cudaMemcpy(d_x_from, h_x_from, p_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y_from, h_y_from, p_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_orientation_from, h_orientation_from, p_N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_w_from, h_w_from, p_N * sizeof(float), cudaMemcpyHostToDevice);
-    
-    // Launch kernel to copy on device
-    int blockSize = 256;
-    int numBlocks = (p_N + blockSize - 1) / blockSize;
-    device_copy_particles<<<numBlocks, blockSize>>>(
-        d_x_from, d_y_from, d_orientation_from, d_w_from,
-        d_x_to, d_y_to, d_orientation_to, d_w_to,
-        p_N
-    );
-    
-    // Copy results back
-    float *h_x_to = new float[p_N];
-    float *h_y_to = new float[p_N];
-    float *h_orientation_to = new float[p_N];
-    float *h_w_to = new float[p_N];
-    
-    cudaMemcpy(h_x_to, d_x_to, p_N * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_y_to, d_y_to, p_N * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_orientation_to, d_orientation_to, p_N * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_w_to, d_w_to, p_N * sizeof(float), cudaMemcpyDeviceToHost);
-    
-    // Update destination particles
-    for (int i = 0; i < p_N; i++) {
-        p_to[i].r.set_states(h_x_to[i], h_y_to[i], h_orientation_to[i]);
-        p_to[i].w = h_w_to[i];
-    }
-    
-    // Free memory
-    delete[] h_x_from;
-    delete[] h_y_from;
-    delete[] h_orientation_from;
-    delete[] h_w_from;
-    
-    delete[] h_x_to;
-    delete[] h_y_to;
-    delete[] h_orientation_to;
-    delete[] h_w_to;
-    
-    cudaFree(d_x_from);
-    cudaFree(d_y_from);
-    cudaFree(d_orientation_from);
-    cudaFree(d_w_from);
-    
-    cudaFree(d_x_to);
-    cudaFree(d_y_to);
-    cudaFree(d_orientation_to);
-    cudaFree(d_w_to);
-}
-
-// Minimal error checking
-extern "C" cudaError_t checkCuda(cudaError_t result)
-{
-    if (result != cudaSuccess) {
-        fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
-    }
-    return result;
-}
-
-// Function for initialization
-extern "C" void initWith(float a, float *x, int N)
-{
-    for(int i = 0; i < N; ++i)
+    bool initialize(int particles_N, Point *map_data, int map_size)
     {
-        x[i] = a;
-    }
-}
-
-// Simple CUDA add function (for testing)
-__global__ void addVectorsInto(float *result, float *a, float *b, int N)
-{
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if(i < N)
-    {
-        result[i] = a[i] + b[i];
-    }
-}
-
-// Test function wrapper
-extern "C" void launchAdd(float *c, float *a, float *b, int N)
-{
-    int blockSize = 256;
-    int numBlocks = (N + blockSize - 1) / blockSize;
-    addVectorsInto<<<numBlocks, blockSize>>>(c, a, b, N);
-}
-
-// Check results function
-extern "C" void checkElementsAre(float target, float *array, int N)
-{
-    for(int i = 0; i < N; i++)
-    {
-        if(array[i] != target)
+        // Allocate device memory
+        if (cudaMalloc(&d_particles, particles_N * sizeof(DeviceParticle)) != cudaSuccess ||
+            cudaMalloc(&d_random_states, particles_N * sizeof(curandState)) != cudaSuccess ||
+            cudaMalloc(&d_weights, particles_N * sizeof(float)) != cudaSuccess ||
+            cudaMalloc(&d_map, map_size * sizeof(Point)) != cudaSuccess)
         {
-            printf("FAIL: array[%d] - %0.0f does not equal %0.0f\n", i, array[i], target);
-            exit(1);
+            freeResources();
+            return false;
         }
+
+        // Allocate pinned host memory
+        if (cudaMallocHost(&h_particles, particles_N * sizeof(DeviceParticle)) != cudaSuccess ||
+            cudaMallocHost(&h_weights, particles_N * sizeof(float)) != cudaSuccess)
+        {
+            freeResources();
+            return false;
+        }
+
+        // Copy map data to device (done once)
+        if (cudaMemcpy(d_map, map_data, map_size * sizeof(Point),
+                       cudaMemcpyHostToDevice) != cudaSuccess)
+        {
+            freeResources();
+            return false;
+        }
+        d_map_size = map_size;
+
+        // Initialize random states
+        const int threadsPerBlock = 256;
+        const int blocks = (particles_N + threadsPerBlock - 1) / threadsPerBlock;
+        setupRandomStates<<<blocks, threadsPerBlock>>>(d_random_states, time(NULL), particles_N);
+
+        // Initialize noise parameters in constant memory
+        float h_noise_params[3] = {0.05f, 0.01f, 0.1f}; // forward, turn, sense noise
+        cudaMemcpyToSymbol(d_noise_params, h_noise_params, sizeof(float) * 3);
+
+        return cudaGetLastError() == cudaSuccess;
     }
-    printf("SUCCESS! All values match %0.0f\n", target);
+
+    // Efficient batch update of particles
+    bool updateParticles(particle *host_particles, int N)
+    {
+        // Convert host particles to device format
+        for (int i = 0; i < N; i++)
+        {
+            h_particles[i].x = host_particles[i].r.get_x();
+            h_particles[i].y = host_particles[i].r.get_y();
+            h_particles[i].theta = host_particles[i].r.get_theta();
+            h_particles[i].weight = host_particles[i].w;
+        }
+
+        // Async copy to device
+        return cudaMemcpyAsync(d_particles, h_particles, N * sizeof(DeviceParticle),
+                               cudaMemcpyHostToDevice) == cudaSuccess;
+    }
+
+    // Efficient batch retrieval of particles
+    bool retrieveParticles(particle *host_particles, int N)
+    {
+        // Async copy from device
+        if (cudaMemcpyAsync(h_particles, d_particles, N * sizeof(DeviceParticle),
+                            cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return false;
+        }
+        cudaDeviceSynchronize();
+
+        // Convert back to host format
+        for (int i = 0; i < N; i++)
+        {
+            host_particles[i].r.set_states(h_particles[i].x, h_particles[i].y, h_particles[i].theta);
+            host_particles[i].w = h_particles[i].weight;
+        }
+        return true;
+    }
+
+    // Accessors
+    DeviceParticle *particles() const { return d_particles; }
+    Point *map() const { return d_map; }
+    int mapSize() const { return d_map_size; }
+    curandState *randomStates() const { return d_random_states; }
+    float *weights() const { return d_weights; }
+
+private:
+    void freeResources()
+    {
+        if (d_particles)
+            cudaFree(d_particles);
+        if (d_random_states)
+            cudaFree(d_random_states);
+        if (d_weights)
+            cudaFree(d_weights);
+        if (d_map)
+            cudaFree(d_map);
+        if (h_particles)
+            cudaFreeHost(h_particles);
+        if (h_weights)
+            cudaFreeHost(h_weights);
+
+        d_particles = nullptr;
+        d_random_states = nullptr;
+        d_weights = nullptr;
+        d_map = nullptr;
+        h_particles = nullptr;
+        h_weights = nullptr;
+    }
+};
+
+// Global memory manager instance
+static CUDAMemoryManager g_memoryManager;
+
+// Kernel implementations
+
+__device__ double calculateMeasurementLikelihood(double predicted, double actual, double var) {
+    const double diff = predicted - actual;
+    const double squared_diff = diff * diff;
+    
+    // More lenient likelihood function
+    double likelihood = exp(-squared_diff / (8.0 * var));  // Less steep falloff
+    
+    // Higher minimum likelihood to prevent particle depletion
+    if (likelihood < 1e-3) likelihood = 1e-3;
+    
+    return likelihood;
 }
 
-// Simple test function that was in your cuda_kernels.h
-extern "C" void runTest(float *c)
+__global__ void setupRandomStates(curandState *states, unsigned long seed, int N)
 {
-    const int N = 100;
-    size_t size = N * sizeof(float);
-    
-    float *a;
-    float *b;
-    
-    checkCuda(cudaMallocManaged(&a, size));
-    checkCuda(cudaMallocManaged(&b, size));
-    checkCuda(cudaMallocManaged(&c, size));
-    
-    initWith(3, a, N);
-    initWith(4, b, N);
-    initWith(0, c, N);
-    
-    launchAdd(c, a, b, N);
-    
-    checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
-    
-    checkElementsAre(7, c, N);
-    
-    checkCuda(cudaFree(a));
-    checkCuda(cudaFree(b));
-    // Note: c is not freed here since it's passed in
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N)
+    {
+        curand_init(seed, idx, 0, &states[idx]);
+    }
 }
+
+__global__ void raycastKernel(
+    const Point *map,
+    int map_size,
+    DeviceParticle *particles,
+    float *measurements,
+    int num_rays,
+    double angle_sep)
+{
+    const int particle_idx = blockIdx.x;
+    const int ray_idx = threadIdx.x;
+
+    if (ray_idx >= num_rays)
+        return;
+
+    const float particle_x = particles[particle_idx].x;
+    const float particle_y = particles[particle_idx].y;
+    const float particle_theta = particles[particle_idx].theta;
+
+    // Calculate ray angle
+    const float ray_angle = ray_idx * angle_sep + particle_theta;
+    float min_dist = INFINITY;
+
+    // Use shared memory for temporary calculations
+    __shared__ float distances[256]; // Assuming max threads per block = 256
+
+    // Each thread processes its own ray
+    for (int i = 0; i < map_size; i++)
+    {
+        float dx = map[i].x - particle_x;
+        float dy = map[i].y - particle_y;
+        float dist = sqrtf(dx * dx + dy * dy);
+
+        float angle = atan2f(dy, dx);
+        if (angle < 0)
+            angle += 2 * M_PI;
+
+        float angle_diff = fabsf(angle - ray_angle);
+        if (angle_diff > M_PI)
+            angle_diff = 2 * M_PI - angle_diff;
+
+        if (angle_diff < 0.1f && dist < min_dist)
+        {
+            min_dist = dist;
+        }
+    }
+
+    distances[ray_idx] = min_dist;
+    __syncthreads();
+
+    // First thread writes measurements
+    if (ray_idx == 0)
+    {
+        for (int i = 0; i < num_rays; i++)
+        {
+            measurements[particle_idx * num_rays + i] = distances[i];
+        }
+    }
+}
+
+__global__ void moveParticlesKernel(
+    DeviceParticle* particles,
+    int N,
+    float turn,
+    float forward,
+    curandState* states)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+
+    // First apply rotation
+    float turn_noise = curand_normal(&states[idx]) * d_noise_params[1];
+    particles[idx].theta = fmodf((particles[idx].theta + turn + turn_noise), 2 * M_PI);
+    if (particles[idx].theta < 0) particles[idx].theta += 2 * M_PI;
+
+    // Then apply forward motion in the new direction
+    float forward_noise = curand_normal(&states[idx]) * d_noise_params[0];
+    float movement = forward + forward_noise;
+    float theta = particles[idx].theta;  // Use updated theta
+    
+    particles[idx].x += movement * cosf(theta);
+    particles[idx].y += movement * sinf(theta);
+
+    // Add small diversity to avoid particle collapse
+    const float diversity = 0.001f;
+    particles[idx].theta += (curand_uniform(&states[idx]) - 0.5f) * diversity;
+    particles[idx].x += (curand_uniform(&states[idx]) - 0.5f) * diversity;
+    particles[idx].y += (curand_uniform(&states[idx]) - 0.5f) * diversity;
+
+    if (particles[idx].theta < 0)
+    particles[idx].theta += 2 * M_PI;
+  else if (particles[idx].theta >= 2 * M_PI)
+    particles[idx].theta -= 2 * M_PI;}
+
+__global__ void calculateWeightsKernel(
+    DeviceParticle* particles,
+    float* measurements,
+    float* actual_measurements,
+    int N,
+    int num_rays)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+
+    float total_likelihood = 1.0f;
+    const float var = d_noise_params[2] * d_noise_params[2];
+    int valid_measurements = 0;
+    
+    // Use fewer measurements but space them evenly
+    const int measurement_stride = 8;  // Increased stride
+    for (int j = 0; j < num_rays; j += measurement_stride) {
+        float predicted = measurements[idx * num_rays + j];
+        float actual = actual_measurements[j];
+        
+        if (predicted >= 0.0f && actual >= 0.0f) {
+            float likelihood = calculateMeasurementLikelihood(predicted, actual, var);
+            total_likelihood *= likelihood;
+            valid_measurements++;
+        }
+    }
+
+    // More moderate weight adjustment
+    if (valid_measurements > 0) {
+        // Take the nth root to avoid numerical underflow, but less aggressively
+        particles[idx].weight = powf(total_likelihood, 1.0f / (valid_measurements * 2.0f));
+    } else {
+        particles[idx].weight = 1e-3f;
+    }
+}
+
+// Host interface implementation
+extern "C"
+{
+
+    bool initializeMCL(int particles_N, Point *map_data, int map_N)
+    {
+        return g_memoryManager.initialize(particles_N, map_data, map_N);
+    }
+
+    void particlesMotion(particle *X, int N, command U)
+    {
+        // Update device particles
+        g_memoryManager.updateParticles(X, N);
+
+        // Launch movement kernel
+        const int threadsPerBlock = 256;
+        const int blocks = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+        moveParticlesKernel<<<blocks, threadsPerBlock>>>(
+            g_memoryManager.particles(),
+            N,
+            U.turn,
+            U.forward,
+            g_memoryManager.randomStates());
+
+        // Retrieve updated particles
+        g_memoryManager.retrieveParticles(X, N);
+    }
+
+    void particlesSensing(
+        particle *X,
+        int X_N,
+        double *Z,
+        int Z_N,
+        Point *map,
+        int map_N,
+        double ang_sep)
+    {
+        // Update device particles
+        g_memoryManager.updateParticles(X, X_N);
+
+        // Allocate device memory for measurements
+        float *d_measurements;
+        float *d_actual_measurements;
+        cudaMalloc(&d_measurements, X_N * Z_N * sizeof(float));
+        cudaMalloc(&d_actual_measurements, Z_N * sizeof(float));
+
+        // Copy actual measurements to device
+        float *h_actual_measurements = new float[Z_N];
+        for (int i = 0; i < Z_N; i++)
+        {
+            h_actual_measurements[i] = static_cast<float>(Z[i]);
+        }
+        cudaMemcpy(d_actual_measurements, h_actual_measurements,
+                   Z_N * sizeof(float), cudaMemcpyHostToDevice);
+        delete[] h_actual_measurements;
+
+        // Launch raycast kernel
+        raycastKernel<<<X_N, Z_N>>>(
+            g_memoryManager.map(),
+            g_memoryManager.mapSize(),
+            g_memoryManager.particles(),
+            d_measurements,
+            Z_N,
+            ang_sep * M_PI / 180.0);
+
+        // Launch weight calculation kernel
+        const int threadsPerBlock = 256;
+        const int blocks = (X_N + threadsPerBlock - 1) / threadsPerBlock;
+
+        calculateWeightsKernel<<<blocks, threadsPerBlock>>>(
+            g_memoryManager.particles(),
+            d_measurements,
+            d_actual_measurements,
+            X_N,
+            Z_N);
+
+        // Check for errors
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+
+        // Cleanup
+        cudaFree(d_measurements);
+        cudaFree(d_actual_measurements);
+
+        // Retrieve updated particles
+        g_memoryManager.retrieveParticles(X, X_N);
+    }
+} // extern "C"
