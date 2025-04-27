@@ -92,6 +92,15 @@ __global__ void device_copy_particles(float *x_from, float *y_from, float *orien
     }
 }
 
+// Minimal error checking
+extern "C" cudaError_t checkCuda(cudaError_t result)
+{
+    if (result != cudaSuccess) {
+        fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
+    }
+    return result;
+}
+
 // Wrapper functions that prepare data for device, call kernel, then copy back
 extern "C" void particles_motion(particle *X, int X_N, command U)
 {
@@ -273,6 +282,7 @@ extern "C" void cp_particle_from_to(particle *p_from, particle *p_to, int p_N)
         d_x_to, d_y_to, d_orientation_to, d_w_to,
         p_N
     );
+    checkCuda(cudaDeviceSynchronize());
     
     // Copy results back
     float *h_x_to = new float[p_N];
@@ -311,15 +321,6 @@ extern "C" void cp_particle_from_to(particle *p_from, particle *p_to, int p_N)
     cudaFree(d_y_to);
     cudaFree(d_orientation_to);
     cudaFree(d_w_to);
-}
-
-// Minimal error checking
-extern "C" cudaError_t checkCuda(cudaError_t result)
-{
-    if (result != cudaSuccess) {
-        fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
-    }
-    return result;
 }
 
 // Function for initialization

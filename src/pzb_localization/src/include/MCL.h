@@ -8,25 +8,24 @@
 class MCL
 {
 public:
-    MCL(particle *X, int X_N, command U, double *Z, 
-        int Z_N, Point *map, int map_N, double ang_sep); 
+    MCL(particle *X, int X_N, geometry_msgs::msg::Transform tf_cmd, double *Z,
+        int Z_N, Point *map, int map_N, double ang_sep);
     // resample the particles and return the new belief
-    void resample(particle* new_belief);
-
+    void resample(particle *new_belief);
 
 private:
     // map landmarks
-    Point* map__;
+    Point *map__;
     int map_N__;
     // robot sensor measurements
-    double* Z__;
+    double *Z__;
     int Z_N__;
     // actuation command
-    command U__;
+    geometry_msgs::msg::Transform tf_cmd__;
     // belief
-    particle* X__;
+    particle *X__;
     int X_N__;
-    //maximum weight
+    // maximum weight
     double max_weight__;
     // LiDAR separation angle
     double ang_sep__;

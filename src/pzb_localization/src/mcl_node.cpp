@@ -2,6 +2,7 @@
 
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "nav_msgs/msg/path.hpp"
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/point_cloud2_iterator.hpp"
@@ -10,13 +11,16 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/utils.hpp"
+#include <tf2/LinearMath/Transform.h>
 
 #include <chrono>
 #include <string>
 #include <array>
+#include <eigen3/Eigen/Dense>
 
 // #include "include/map_utils.h"
 // #include "include/robot.h"
@@ -28,7 +32,6 @@
 #include <cuda_runtime.h>
 #include "cuda_kernels.h"
 // #include "include/utility.h"
-
 
 using namespace std::chrono_literals;
 
@@ -44,6 +47,11 @@ public:
             [this](const nav_msgs::msg::Odometry &msg)
             {
                 pose = msg.pose.pose;
+
+                if(is_first_odom){
+                    last_pose = pose;
+                    is_first_odom = false;
+                }
             });
 
         map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -67,6 +75,7 @@ public:
         map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
         local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10);
         mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
+        ray_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/pzb/ray_path", 10);
 
         timer_ = this->create_wall_timer(10ms, std::bind(&MCLNode::update, this));
 
@@ -79,6 +88,7 @@ public:
         init_pc_msg(local_map_pc_msg);
 
         mcl_msg.header.frame_id = "odom";
+        ray_path_msg.header.frame_id = "odom";
 
         pose.position = geometry_msgs::build<geometry_msgs::msg::Point>().x(0).y(0).z(0);
         pose.orientation = geometry_msgs::build<geometry_msgs::msg::Quaternion>().x(0).y(0).z(0).w(1);
@@ -93,7 +103,7 @@ public:
         robot.set_states(0.0, 0.0, 0.0);
 
         // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
-        robot.set_noise(0.05, 0.01, 0.1);
+        robot.set_noise(0.05, 0.05, 0.2);
 
         // Initialize particle array
         particles_size = particles_N * sizeof(particle);
@@ -115,16 +125,18 @@ public:
     void update()
     {
         mcl();
-        
-        // The rest of your function
+
         map_pc_msg.header.stamp = this->get_clock()->now();
         local_map_pc_msg.header.stamp = this->get_clock()->now();
         mcl_msg.header.stamp = this->get_clock()->now();
-    
+
         map_pc_pub_->publish(map_pc_msg);
         local_map_pc_pub_->publish(local_map_pc_msg);
-    
         mcl_pub_->publish(mcl_msg);
+
+        // compute_ray_path();
+        // ray_path_msg.header.stamp = this->get_clock()->now();
+        // ray_path_pub_->publish(ray_path_msg);
     }
 
     void mcl()
@@ -134,37 +146,17 @@ public:
         compute_raycast(map, map_N, local_map, pose, pc_ang_sep);
         fill_pc(local_map_pc_msg, local_map, local_map_N, 255, 0, 0, 255, 0.05);
 
-        // Calculate linear displacement in global frame
-        double dx = pose.position.x - last_pose.position.x;
-        double dy = pose.position.y - last_pose.position.y;
-
-        // Get yaw angles from quaternions
-        double yaw = tf2::getYaw(pose.orientation);
-        double yaw_last = tf2::getYaw(last_pose.orientation);
-
-        // Calculate forward motion in robot's local frame
-        // Project the displacement onto the robot's previous heading
-        control.forward = std::cos(yaw_last) * dx + std::sin(yaw_last) * dy;
-
-        // Calculate turning angle (handle wrapping around +/- PI)
-        control.turn = yaw - yaw_last;
-        if (control.turn > M_PI)
-            control.turn -= 2 * M_PI;
-        if (control.turn < -M_PI)
-            control.turn += 2 * M_PI;
-
-        // Execute movement (with noise)
-        // We don't care, it's just for the GUI
-        // robot.move(control.turn, control.forward);
+        // Calculate tf from last received pose to the new one
+        geometry_msgs::msg::Transform tf_cmd = computeLocalTransform(last_pose, pose);
 
         // Read sensor
         double *z;
         size_t sensor_size = local_map_N * sizeof(double);
         checkCuda(cudaMallocManaged(&z, sensor_size));
 
-        Point* local_map_tmp;
+        Point *local_map_tmp;
         checkCuda(cudaMallocManaged(&local_map_tmp, local_map_size));
-    
+
         // IRL: Real LiDAR's data
         robot.sense(map, map_N, local_map_tmp, local_map_N, z, pc_ang_sep, pose, true);
 
@@ -172,10 +164,7 @@ public:
         particle *belief;
         checkCuda(cudaMallocManaged(&belief, particles_size));
 
-        MCL(particles, particles_N, control, z, local_map_N, map, map_N, pc_ang_sep).resample(belief);    
-
-        // Visualize result
-        // utility::visualization(&robot, 0, &particles, &belief, map);
+        MCL(particles, particles_N, tf_cmd, z, local_map_N, map, map_N, pc_ang_sep).resample(belief);
 
         // Update particles
         cp_particle_from_to(belief, particles, particles_N);
@@ -193,6 +182,7 @@ public:
 private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pc_pub_, local_map_pc_pub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mcl_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr ray_path_pub_;
 
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -201,6 +191,7 @@ private:
 
     nav_msgs::msg::OccupancyGrid grid_map;
     nav_msgs::msg::Odometry mcl_msg;
+    nav_msgs::msg::Path ray_path_msg;
 
     sensor_msgs::msg::PointCloud2 map_pc_msg;
     sensor_msgs::msg::PointCloud2 local_map_pc_msg;
@@ -210,12 +201,11 @@ private:
     Robot robot;
     command control;
     particle *particles;
-    int particles_N = 500;
+    int particles_N = 1000;
     size_t particles_size;
 
-    double pc_ang_sep = 9.0;
+    double pc_ang_sep = 18.0;
 
-    // CUDA vars
     size_t map_size;
     int map_N;
     Point *map;
@@ -223,6 +213,8 @@ private:
     size_t local_map_size;
     int local_map_N;
     Point *local_map;
+
+    bool is_first_odom{true};
 
     geometry_msgs::msg::PoseWithCovariance get_pondered_pose()
     {
@@ -294,7 +286,7 @@ private:
         std::array<double, 36> cov;
         std::fill(cov.begin(), cov.end(), 0.0);
 
-        for (int i = 0 ; i < particles_N ; i++)
+        for (int i = 0; i < particles_N; i++)
         {
             double x = particles[i].r.get_x();
             double y = particles[i].r.get_y();
@@ -343,6 +335,39 @@ private:
         }
 
         return pose_with_cov;
+    }
+
+    void compute_ray_path()
+    {
+        double yaw = tf2::getYaw(pose.orientation);
+        double ang;
+
+        Eigen::Vector3f ray, ray_r, eta;
+        Eigen::Matrix3f m;
+
+        eta << pose.position.x, pose.position.y, yaw;
+        ray << 2, 0, 0;
+        ray_path_msg.poses.clear();
+
+        const double angle_resolution = pc_ang_sep * M_PI / 180.0;
+        const int num_rays = static_cast<int>(2.0 * M_PI / angle_resolution);
+        std::cout << num_rays << std::endl;
+
+        for (int i = 0; i < num_rays; i++)
+        {
+            ang = yaw + i * angle_resolution;
+            m << std::cos(ang), -std::sin(ang), 0,
+                std::sin(ang), std::cos(ang), 0,
+                0, 0, 1;
+            ray_r = m * ray + eta;
+            geometry_msgs::msg::PoseStamped tmp_pose;
+            tmp_pose.pose.position.x = eta(0);
+            tmp_pose.pose.position.y = eta(1);
+            ray_path_msg.poses.push_back(tmp_pose);
+            tmp_pose.pose.position.x = ray_r(0);
+            tmp_pose.pose.position.y = ray_r(1);
+            ray_path_msg.poses.push_back(tmp_pose);
+        }
     }
 };
 

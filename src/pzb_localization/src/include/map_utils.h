@@ -6,6 +6,10 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2/LinearMath/Transform.h>
+#include "tf2/utils.hpp"
+
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <sensor_msgs/msg/point_field.hpp>
@@ -45,12 +49,16 @@ std::vector<Point> map2vec(
 
 int map2arr(const nav_msgs::msg::OccupancyGrid &map, Point *points_array, int max_points);
 
-// void compute_raycast(
-//     const std::vector<Point> &map, std::vector<Point> &visible_points,
-//     const geometry_msgs::msg::Pose &source_pose, double angle_separation);
-
 void compute_raycast(
     const Point *map, int map_N, Point *local_map,
     const geometry_msgs::msg::Pose &source_pose, double angle_separation);
+
+geometry_msgs::msg::Transform computeLocalTransform(
+    const geometry_msgs::msg::Pose &pose_a,
+    const geometry_msgs::msg::Pose &pose_b);
+
+geometry_msgs::msg::Pose applyTransformToPose(
+    const geometry_msgs::msg::Transform &tf_msg,
+    const geometry_msgs::msg::Pose &in);
 
 #endif

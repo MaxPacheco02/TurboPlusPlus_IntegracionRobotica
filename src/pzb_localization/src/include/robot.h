@@ -7,6 +7,8 @@
 #include <math.h>
 #include <exception>
 
+#include <eigen3/Eigen/Dense>
+
 #include "utility.h"
 #include "map_utils.h"
 
@@ -30,7 +32,7 @@ public:
     __host__ __device__ void sense(const Point *map, int map_N, Point* local_map, int local_map_N, 
         double *sensor, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
     // Move the robot
-    __host__ __device__ void move(double turn, double forward);
+    __host__ __device__ void move(geometry_msgs::msg::Transform tf_cmd);
     // Update pose msg
     void update_pose_msg();
     // get sensor noise
@@ -46,15 +48,13 @@ public:
     // Get pose readings
     std::string get_pose();
 
-    const static int tpb__{1024};
-
     double x__;
     double y__;
     double orientation__;
 
 private:
     // robot states
-    geometry_msgs::msg::Pose pose__;
+    geometry_msgs::msg::Pose pose_msg__;
 
     // noise
     static double forward_noise__;
