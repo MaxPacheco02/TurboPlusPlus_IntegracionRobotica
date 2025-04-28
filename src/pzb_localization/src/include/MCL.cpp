@@ -135,39 +135,123 @@ void MCL::normalizeWeights()
     }
 }
 
-void MCL::resampleParticles(particle* new_belief) {
+void MCL::resampleParticles(particle *new_belief)
+{
     static std::random_device rd;
     static std::mt19937 gen(rd());
     std::uniform_real_distribution<double> dist(0.0, 1.0);
-    std::normal_distribution<double> pos_noise(0.0, 0.02);  // Small position noise
-    std::normal_distribution<double> angle_noise(0.0, 0.05);  // Small angle noise
+
+    // Calculate mean pose before resampling
+    double mean_x = 0.0, mean_y = 0.0;
+    double mean_cos = 0.0, mean_sin = 0.0;
+    double total_weight = 0.0;
+
+    for (int i = 0; i < num_particles_; i++)
+    {
+        const double w = particles_[i].w;
+        mean_x += particles_[i].r.get_x() * w;
+        mean_y += particles_[i].r.get_y() * w;
+        mean_cos += std::cos(particles_[i].r.get_theta()) * w;
+        mean_sin += std::sin(particles_[i].r.get_theta()) * w;
+        total_weight += w;
+    }
+
+    mean_x /= total_weight;
+    mean_y /= total_weight;
+    double mean_theta = std::atan2(mean_sin, mean_cos);
+
+    // Determine if robot is stationary based on control commands
+    bool is_stationary = (std::abs(cmd_.forward) < 0.0001 && std::abs(cmd_.turn) < 0.001);
+
+    // Adjust noise based on motion state
+    double pos_noise = is_stationary ? 0.001 : 0.02;   // Reduced noise when stationary
+    double angle_noise = is_stationary ? 0.001 : 0.05; // Very small angle noise when stationary
 
     // Initialize resampling wheel
     int index = static_cast<int>(dist(gen) * num_particles_);
     double beta = 0.0;
     const double step = 2.0 * max_weight_ / num_particles_;
 
+    std::normal_distribution<double> pos_noise_dist(0.0, pos_noise);
+    std::normal_distribution<double> angle_noise_dist(0.0, angle_noise);
+
     int resampled_count = 0;
-    for (int i = 0; i < num_particles_; i++) {
+    for (int i = 0; i < num_particles_; i++)
+    {
         beta += dist(gen) * step;
-        
-        while (beta > particles_[index].w) {
+
+        while (beta > particles_[index].w)
+        {
             beta -= particles_[index].w;
             index = (index + 1) % num_particles_;
             resampled_count++;
         }
-        
-        // Copy particle and add noise
+
+        // Copy particle
         new_belief[i] = particles_[index];
-        new_belief[i].r.set_states(
-            new_belief[i].r.get_x() + pos_noise(gen),
-            new_belief[i].r.get_y() + pos_noise(gen),
-            new_belief[i].r.get_theta() + angle_noise(gen)
-        );
+
+        // Add noise based on motion state
+        if (is_stationary)
+        {
+            // Very conservative updates when stationary
+            double noise_scale = std::min(1.0, particles_[index].w / max_weight_);
+            new_belief[i].r.set_states(
+                new_belief[i].r.get_x() + pos_noise_dist(gen) * noise_scale,
+                new_belief[i].r.get_y() + pos_noise_dist(gen) * noise_scale,
+                new_belief[i].r.get_theta() + angle_noise_dist(gen) * noise_scale);
+        }
+        else
+        {
+            // Normal noise when moving
+            new_belief[i].r.set_states(
+                new_belief[i].r.get_x() + pos_noise_dist(gen),
+                new_belief[i].r.get_y() + pos_noise_dist(gen),
+                new_belief[i].r.get_theta() + angle_noise_dist(gen));
+        }
+
+        // Reset weight
         new_belief[i].w = 1.0 / num_particles_;
     }
 
     std::cout << "Resampling iterations: " << resampled_count << std::endl;
+
+    // When stationary, ensure some particles maintain the previous mean orientation
+    if (is_stationary)
+    {
+        const int num_anchor_particles = num_particles_ / 10; // 10% of particles
+        for (int i = 0; i < num_anchor_particles; i++)
+        {
+            int idx = static_cast<int>(dist(gen) * num_particles_);
+            new_belief[idx].r.set_states(
+                new_belief[idx].r.get_x(),
+                new_belief[idx].r.get_y(),
+                mean_theta + angle_noise_dist(gen) * 0.1 // Very small noise
+            );
+        }
+    }
+    // // Add some random particles with probability 0.05 (for the future, it helps in kidnapping problem)
+    // for (int i = 0; i < num_particles_; ++i)
+    // {
+    //     if (utility::get_random_number() < 0.05)
+    //     { // 5% chance of random particle
+    //         // Create a random particle near the current estimated position
+    //         double mean_x = 0.0, mean_y = 0.0;
+    //         for (int j = 0; j < num_particles_; j++)
+    //         {
+    //             mean_x += particles_[j].r.get_x() / num_particles_;
+    //             mean_y += particles_[j].r.get_y() / num_particles_;
+    //         }
+
+    //         Robot r;
+    //         r.set_states(
+    //             mean_x + utility::get_gaussian_random_number(0.0, 1.0),
+    //             mean_y + utility::get_gaussian_random_number(0.0, 1.0),
+    //             utility::get_random_number() * 2.0 * M_PI);
+    //         // r.set_noise(noise_fwd, noise_fwd, noise_fwd);
+    //         r.set_noise(0.05, 0.05, 0.05);
+    //         new_belief[i] = particle{r, 0.05 * max_weight_}; // Give it a reasonable weight
+    //     }
+    // }
 }
 
 double MCL::findMaxWeight() const

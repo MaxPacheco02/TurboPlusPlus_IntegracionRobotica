@@ -2,9 +2,15 @@
 #define MAP_UTILS_H
 
 #include <geometry_msgs/msg/pose.hpp>
+
+#include <nav_msgs/msg/occupancy_grid.hpp>
+
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include "sensor_msgs/point_cloud2_iterator.hpp"
-#include <nav_msgs/msg/occupancy_grid.hpp>
+
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/utils.hpp"
+
 #include <cuda_runtime.h>
 
 // Basic 2D point structure

@@ -20,9 +20,9 @@ MCLNode::~MCLNode() {
 }
 
 void MCLNode::initializeParameters() {
-    particles_N_ = 1000;
-    pc_ang_sep_ = 9.0;  // degrees
-    update_rate_ = 100; // Hz
+    particles_N_ = 500;
+    pc_ang_sep_ = 9.0;   // Reduced from 9.0 for better angular resolution
+    update_rate_ = 50;  // Hz
 }
 
 void MCLNode::initializePublishersAndSubscribers() {
@@ -115,38 +115,48 @@ double normalize_angle(double angle) {
     return angle;
 }
 
+
 void MCLNode::calcControl() {
     // Calculate displacement in global frame
     double dx = pose_.position.x - last_pose_.position.x;
     double dy = pose_.position.y - last_pose_.position.y;
 
-    // Get yaw angles
+    // Get yaw angles and normalize them
     double yaw = tf2::getYaw(pose_.orientation);
     double yaw_last = tf2::getYaw(last_pose_.orientation);
-
+    
     // Calculate motion in robot's local frame
-    control_.forward = sqrt(dx*dx + dy*dy);
+    double global_heading = atan2(dy, dx);
+    
+    // Calculate turn first (in local frame)
     control_.turn = normalize_angle(yaw - yaw_last);
+    
+    // Calculate forward motion
+    control_.forward = sqrt(dx*dx + dy*dy);
 
-    // Threshold for minimum movement to consider
-    const double min_move = 0.001;  // 1mm
-    const double min_turn = 0.001;  // ~0.057 degrees
+    // Adjust thresholds for minimum movement
+    const double min_move = 0.0001;  // 0.1mm - reduced from 1mm
+    const double min_turn = 0.001;   // ~0.057 degrees
+    
+    if (control_.forward < min_move && fabs(control_.turn) < min_turn) {
+        // If both motion components are very small, treat as stationary
+        control_.forward = 0.0;
+        control_.turn = 0.0;
+    } else {
+        // Otherwise keep the small motions to maintain particle diversity
+        if (control_.forward < min_move) control_.forward = min_move;
+        if (fabs(control_.turn) < min_turn) {
+            control_.turn = (control_.turn >= 0) ? min_turn : -min_turn;
+        }
+    }
 
-    if (control_.forward < min_move) control_.forward = 0.0;
-    if (fabs(control_.turn) < min_turn) control_.turn = 0.0;
-
-    // Detailed debug output
-    std::cout << "\nControl update details:" << std::endl;
-    std::cout << "Current pose: x=" << pose_.position.x 
-              << ", y=" << pose_.position.y 
-              << ", yaw=" << yaw << std::endl;
-    std::cout << "Last pose: x=" << last_pose_.position.x 
-              << ", y=" << last_pose_.position.y 
-              << ", yaw=" << yaw_last << std::endl;
-    std::cout << "Delta: dx=" << dx << ", dy=" << dy 
-              << ", dyaw=" << (yaw - yaw_last) << std::endl;
-    std::cout << "Control: forward=" << control_.forward 
-              << ", turn=" << control_.turn << std::endl;
+    // Debug output
+    RCLCPP_DEBUG(this->get_logger(), 
+        "Control update: forward=%.6f, turn=%.6f (rad) = %.2f deg",
+        control_.forward, control_.turn, control_.turn * 180.0 / M_PI);
+    RCLCPP_DEBUG(this->get_logger(),
+        "Pose delta: dx=%.6f, dy=%.6f, dyaw=%.6f",
+        dx, dy, control_.turn);
 }
 
 void MCLNode::update() {
@@ -203,116 +213,91 @@ void MCLNode::update() {
     mcl_pub_->publish(mcl_msg_);
 }
 
+
 geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const {
     geometry_msgs::msg::PoseWithCovariance pose_with_cov;
     
-    if (particles_N_ == 0) {
-        return pose_with_cov;
-    }
+    if (particles_N_ == 0) return pose_with_cov;
 
-    // Calculate weighted mean using stable numerics
-    double total_weight = 0.0;
-    double x_weighted_sum = 0.0;
-    double y_weighted_sum = 0.0;
-    double cos_weighted_sum = 0.0;
-    double sin_weighted_sum = 0.0;
+    // Initialize accumulators
+    double sum_weights = 0.0;
+    double weighted_x = 0.0;
+    double weighted_y = 0.0;
+    double weighted_cos = 0.0;
+    double weighted_sin = 0.0;
 
+    // First pass: calculate weighted means
     for (int i = 0; i < particles_N_; i++) {
         const double weight = particles_[i].w;
         const double x = particles_[i].r.get_x();
         const double y = particles_[i].r.get_y();
         const double theta = particles_[i].r.get_theta();
 
-        x_weighted_sum += x * weight;
-        y_weighted_sum += y * weight;
-        cos_weighted_sum += std::cos(theta) * weight;
-        sin_weighted_sum += std::sin(theta) * weight;
-        total_weight += weight;
+        weighted_x += x * weight;
+        weighted_y += y * weight;
+        weighted_cos += std::cos(theta) * weight;
+        weighted_sin += std::sin(theta) * weight;
+        sum_weights += weight;
     }
 
-    // Handle zero total weight case
-    if (total_weight <= 0.0) {
+    // Handle degenerate case
+    if (sum_weights <= 1e-10) {
+        sum_weights = 1.0;
         // Use first particle as fallback
-        geometry_msgs::msg::Point position;
-        position.x = particles_[0].r.get_x();
-        position.y = particles_[0].r.get_y();
-
-        tf2::Quaternion q;
-        q.setRPY(0, 0, particles_[0].r.get_theta());
-        geometry_msgs::msg::Quaternion orientation;
-        tf2::convert(q, orientation);
-
-        pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>()
-            .position(position)
-            .orientation(orientation);
-        return pose_with_cov;
+        weighted_x = particles_[0].r.get_x();
+        weighted_y = particles_[0].r.get_y();
+        weighted_cos = std::cos(particles_[0].r.get_theta());
+        weighted_sin = std::sin(particles_[0].r.get_theta());
     }
 
-    // Calculate mean values
-    const double inv_weight = 1.0 / total_weight;
-    const double x_mean = x_weighted_sum * inv_weight;
-    const double y_mean = y_weighted_sum * inv_weight;
-    const double theta_mean = std::atan2(
-        sin_weighted_sum * inv_weight,
-        cos_weighted_sum * inv_weight
-    );
+    // Calculate mean position
+    const double mean_x = weighted_x / sum_weights;
+    const double mean_y = weighted_y / sum_weights;
+    
+    // Calculate mean orientation using atan2
+    const double mean_cos = weighted_cos / sum_weights;
+    const double mean_sin = weighted_sin / sum_weights;
+    const double mean_theta = std::atan2(mean_sin, mean_cos);
 
     // Set mean pose
-    geometry_msgs::msg::Point position;
-    position.x = x_mean;
-    position.y = y_mean;
-
+    pose_with_cov.pose.position.x = mean_x;
+    pose_with_cov.pose.position.y = mean_y;
+    
     tf2::Quaternion q;
-    q.setRPY(0, 0, theta_mean);
-    geometry_msgs::msg::Quaternion orientation;
-    tf2::convert(q, orientation);
-
-    pose_with_cov.pose = geometry_msgs::build<geometry_msgs::msg::Pose>()
-        .position(position)
-        .orientation(orientation);
+    q.setRPY(0, 0, mean_theta);
+    tf2::convert(q, pose_with_cov.pose.orientation);
 
     // Calculate covariance matrix
     std::array<double, 36> cov;
     std::fill(cov.begin(), cov.end(), 0.0);
 
+    // Second pass: calculate covariances
     for (int i = 0; i < particles_N_; i++) {
-        const double x = particles_[i].r.get_x();
-        const double y = particles_[i].r.get_y();
-        const double theta = particles_[i].r.get_theta();
-        const double normalized_weight = particles_[i].w * inv_weight;
-
-        // Handle angle difference properly
-        double theta_diff = theta - theta_mean;
-        if (theta_diff > M_PI) theta_diff -= 2 * M_PI;
-        if (theta_diff < -M_PI) theta_diff += 2 * M_PI;
-
-        const double dx = x - x_mean;
-        const double dy = y - y_mean;
+        const double w = particles_[i].w / sum_weights;
+        const double dx = particles_[i].r.get_x() - mean_x;
+        const double dy = particles_[i].r.get_y() - mean_y;
+        double dtheta = particles_[i].r.get_theta() - mean_theta;
+        
+        // Normalize angle difference to [-π, π]
+        while (dtheta > M_PI) dtheta -= 2 * M_PI;
+        while (dtheta < -M_PI) dtheta += 2 * M_PI;
 
         // Update covariance components
-        cov[0] += normalized_weight * dx * dx;       // x variance
-        cov[1] += normalized_weight * dx * dy;       // x-y covariance
-        cov[6] = cov[1];                            // y-x covariance
-        cov[7] += normalized_weight * dy * dy;       // y variance
-        cov[5] += normalized_weight * dx * theta_diff;  // x-yaw covariance
-        cov[30] = cov[5];                           // yaw-x covariance
-        cov[11] += normalized_weight * dy * theta_diff; // y-yaw covariance
-        cov[31] = cov[11];                          // yaw-y covariance
-        cov[35] += normalized_weight * theta_diff * theta_diff; // yaw variance
+        cov[0] += w * dx * dx;        // Var(x)
+        cov[7] += w * dy * dy;        // Var(y)
+        cov[35] += w * dtheta * dtheta; // Var(theta)
+        cov[1] = cov[6] += w * dx * dy; // Cov(x,y)
+        cov[5] = cov[30] += w * dx * dtheta; // Cov(x,theta)
+        cov[11] = cov[31] += w * dy * dtheta; // Cov(y,theta)
     }
 
-    // Ensure positive definiteness
-    constexpr double min_variance = 1e-6;
-    cov[0] = std::max(cov[0], min_variance);   // x variance
-    cov[7] = std::max(cov[7], min_variance);   // y variance
-    cov[14] = min_variance;                    // z variance
-    cov[21] = min_variance;                    // roll variance
-    cov[28] = min_variance;                    // pitch variance
-    cov[35] = std::max(cov[35], min_variance); // yaw variance
+    // Ensure positive definiteness with minimum variance
+    const double min_var = 1e-6;
+    for (int i = 0; i < 36; i += 7) {  // Diagonal elements
+        cov[i] = std::max(cov[i], min_var);
+    }
 
-    // Set covariance matrix
     std::copy(cov.begin(), cov.end(), pose_with_cov.covariance.begin());
-
     return pose_with_cov;
 }
 

@@ -158,17 +158,67 @@ static CUDAMemoryManager g_memoryManager;
 
 // Kernel implementations
 
-__device__ double calculateMeasurementLikelihood(double predicted, double actual, double var) {
+__device__ double calculateMeasurementLikelihood(
+    double predicted, 
+    double actual, 
+    double var) 
+{
     const double diff = predicted - actual;
     const double squared_diff = diff * diff;
     
-    // More lenient likelihood function
-    double likelihood = exp(-squared_diff / (8.0 * var));  // Less steep falloff
+    // More robust likelihood function with bounded minimum
+    const double min_likelihood = 1e-3;
+    const double max_squared_diff = 8.0 * var;  // Allow larger differences
     
-    // Higher minimum likelihood to prevent particle depletion
-    if (likelihood < 1e-3) likelihood = 1e-3;
+    double likelihood = exp(-squared_diff / max_squared_diff);
+    return fmax(likelihood, min_likelihood);
+}
+
+__global__ void calculateWeightsKernel(
+    DeviceParticle* particles,
+    float* measurements,
+    float* actual_measurements,
+    int N,
+    int num_rays)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+
+    float total_likelihood = 1.0f;
+    const float measurement_var = d_noise_params[2] * d_noise_params[2];
+    int valid_measurements = 0;
     
-    return likelihood;
+    // Get particle's orientation
+    const float particle_theta = particles[idx].theta;
+    
+    // Calculate number of rays to shift based on particle orientation
+    const float angle_per_ray = (2.0f * M_PI) / num_rays;
+    const int ray_shift = static_cast<int>(particle_theta / angle_per_ray + 0.5f);
+    
+    // Use fewer measurements to reduce correlation
+    const int measurement_stride = 4;  // Reduced from 8 for better orientation sensitivity
+    for (int j = 0; j < num_rays; j += measurement_stride) {
+        // Get index with orientation shift
+        int shifted_idx = (j + ray_shift) % num_rays;
+        float predicted = measurements[idx * num_rays + j];
+        float actual = actual_measurements[shifted_idx];
+        
+        if (predicted > 0.0f && actual > 0.0f) {
+            float likelihood = calculateMeasurementLikelihood(
+                predicted, actual, measurement_var);
+            total_likelihood *= likelihood;
+            valid_measurements++;
+        }
+    }
+
+    // Calculate final weight
+    if (valid_measurements > 0) {
+        // Take nth root to prevent numerical underflow
+        const float power = 1.0f / (valid_measurements * 2.0f);
+        particles[idx].weight = powf(total_likelihood, power);
+    } else {
+        particles[idx].weight = 1e-3f;  // Minimum weight for invalid measurements
+    }
 }
 
 __global__ void setupRandomStates(curandState *states, unsigned long seed, int N)
@@ -198,8 +248,8 @@ __global__ void raycastKernel(
     const float particle_y = particles[particle_idx].y;
     const float particle_theta = particles[particle_idx].theta;
 
-    // Calculate ray angle
-    const float ray_angle = ray_idx * angle_sep + particle_theta;
+    // Calculate ray angle relative to particle's orientation
+    const float ray_angle = particle_theta + ray_idx * angle_sep;  // Start from particle's orientation
     float min_dist = INFINITY;
 
     // Use shared memory for temporary calculations
@@ -213,12 +263,12 @@ __global__ void raycastKernel(
         float dist = sqrtf(dx * dx + dy * dy);
 
         float angle = atan2f(dy, dx);
-        if (angle < 0)
-            angle += 2 * M_PI;
-
-        float angle_diff = fabsf(angle - ray_angle);
-        if (angle_diff > M_PI)
-            angle_diff = 2 * M_PI - angle_diff;
+        
+        // Normalize angle difference to [-π, π]
+        float angle_diff = angle - ray_angle;
+        while (angle_diff > M_PI) angle_diff -= 2 * M_PI;
+        while (angle_diff < -M_PI) angle_diff += 2 * M_PI;
+        angle_diff = fabsf(angle_diff);
 
         if (angle_diff < 0.1f && dist < min_dist)
         {
@@ -249,64 +299,38 @@ __global__ void moveParticlesKernel(
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N) return;
 
-    // First apply rotation
+    // Get current particle state
+    float x = particles[idx].x;
+    float y = particles[idx].y;
+    float theta = particles[idx].theta;
+
+    // Calculate noisy control inputs
     float turn_noise = curand_normal(&states[idx]) * d_noise_params[1];
-    particles[idx].theta = fmodf((particles[idx].theta + turn + turn_noise), 2 * M_PI);
-    if (particles[idx].theta < 0) particles[idx].theta += 2 * M_PI;
-
-    // Then apply forward motion in the new direction
     float forward_noise = curand_normal(&states[idx]) * d_noise_params[0];
-    float movement = forward + forward_noise;
-    float theta = particles[idx].theta;  // Use updated theta
     
-    particles[idx].x += movement * cosf(theta);
-    particles[idx].y += movement * sinf(theta);
-
-    // Add small diversity to avoid particle collapse
-    const float diversity = 0.001f;
-    particles[idx].theta += (curand_uniform(&states[idx]) - 0.5f) * diversity;
-    particles[idx].x += (curand_uniform(&states[idx]) - 0.5f) * diversity;
-    particles[idx].y += (curand_uniform(&states[idx]) - 0.5f) * diversity;
-
-    if (particles[idx].theta < 0)
-    particles[idx].theta += 2 * M_PI;
-  else if (particles[idx].theta >= 2 * M_PI)
-    particles[idx].theta -= 2 * M_PI;}
-
-__global__ void calculateWeightsKernel(
-    DeviceParticle* particles,
-    float* measurements,
-    float* actual_measurements,
-    int N,
-    int num_rays)
-{
-    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-
-    float total_likelihood = 1.0f;
-    const float var = d_noise_params[2] * d_noise_params[2];
-    int valid_measurements = 0;
+    // Apply turn first (with noise)
+    float noisy_turn = turn + turn_noise;
+    theta += noisy_turn;
     
-    // Use fewer measurements but space them evenly
-    const int measurement_stride = 8;  // Increased stride
-    for (int j = 0; j < num_rays; j += measurement_stride) {
-        float predicted = measurements[idx * num_rays + j];
-        float actual = actual_measurements[j];
-        
-        if (predicted >= 0.0f && actual >= 0.0f) {
-            float likelihood = calculateMeasurementLikelihood(predicted, actual, var);
-            total_likelihood *= likelihood;
-            valid_measurements++;
-        }
-    }
+    // Normalize theta to [-π, π]
+    while (theta > M_PI) theta -= 2 * M_PI;
+    while (theta < -M_PI) theta += 2 * M_PI;
+    
+    // Apply forward motion in the new direction (with noise)
+    float noisy_forward = forward + forward_noise;
+    x += noisy_forward * cosf(theta);
+    y += noisy_forward * sinf(theta);
+    
+    // Add small random walk for diversity (prevents particle depletion)
+    const float diversity_scale = 0.001f;
+    x += curand_normal(&states[idx]) * diversity_scale;
+    y += curand_normal(&states[idx]) * diversity_scale;
+    theta += curand_normal(&states[idx]) * diversity_scale;
 
-    // More moderate weight adjustment
-    if (valid_measurements > 0) {
-        // Take the nth root to avoid numerical underflow, but less aggressively
-        particles[idx].weight = powf(total_likelihood, 1.0f / (valid_measurements * 2.0f));
-    } else {
-        particles[idx].weight = 1e-3f;
-    }
+    // Store updated state
+    particles[idx].x = x;
+    particles[idx].y = y;
+    particles[idx].theta = theta;
 }
 
 // Host interface implementation
