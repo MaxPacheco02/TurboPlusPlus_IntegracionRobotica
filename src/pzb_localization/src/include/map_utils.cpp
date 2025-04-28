@@ -251,7 +251,7 @@ void compute_raycast(
 
     // Angular resolution and number of rays
     const double angle_resolution = angle_separation * M_PI / 180.0;
-    const int num_rays = static_cast<int>(2.0 * M_PI / angle_resolution) + 1;
+    const int num_rays = static_cast<int>(2.0 * M_PI / angle_resolution);
 
     // Bin points by angle
     std::vector<std::vector<PCDiff>> angle_bins(num_rays);
@@ -264,7 +264,7 @@ void compute_raycast(
     }
 
     // Wide angular threshold
-    const double angle_threshold = 0.01 * angle_resolution;
+    const double angle_threshold = 0.1 * angle_resolution;
 
     for (int i = 0; i < num_rays; ++i)
     {
@@ -291,7 +291,6 @@ void compute_raycast(
                 }
             }
         }
-
         local_map[i] = closest_point;
     }
 }

@@ -11,7 +11,7 @@ public:
     MCL(particle *X, int X_N, geometry_msgs::msg::Transform tf_cmd, double *Z,
         int Z_N, Point *map, int map_N, double ang_sep);
     // resample the particles and return the new belief
-    void resample(particle *new_belief);
+    void resample(particle *new_belief, double noise_fwd, double noise_turn, double noise_sensor);
 
 private:
     // map landmarks

@@ -103,7 +103,7 @@ public:
         robot.set_states(0.0, 0.0, 0.0);
 
         // robot.set_noise(0.05, 0.05, 0.1);   // Good performance
-        robot.set_noise(0.05, 0.05, 0.2);
+        robot.set_noise(noise_fwd, noise_turn, noise_sensor);
 
         // Initialize particle array
         particles_size = particles_N * sizeof(particle);
@@ -164,7 +164,7 @@ public:
         particle *belief;
         checkCuda(cudaMallocManaged(&belief, particles_size));
 
-        MCL(particles, particles_N, tf_cmd, z, local_map_N, map, map_N, pc_ang_sep).resample(belief);
+        MCL(particles, particles_N, tf_cmd, z, local_map_N, map, map_N, pc_ang_sep).resample(belief, noise_fwd, noise_turn, noise_sensor);
 
         // Update particles
         cp_particle_from_to(belief, particles, particles_N);
@@ -203,6 +203,10 @@ private:
     particle *particles;
     int particles_N = 1000;
     size_t particles_size;
+
+    double noise_fwd{0.01};
+    double noise_turn{0.01};
+    double noise_sensor{0.1};
 
     double pc_ang_sep = 18.0;
 

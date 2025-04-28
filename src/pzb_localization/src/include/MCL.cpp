@@ -39,7 +39,7 @@ void MCL::sensor_update()
     checkCuda(cudaFree(meas));
 }
 
-void MCL::resample(particle *new_belief)
+void MCL::resample(particle *new_belief, double noise_fwd, double noise_turn, double noise_sensor)
 {
     // move particles
     motion_update();
@@ -69,5 +69,27 @@ void MCL::resample(particle *new_belief)
         }
         //  select particle at index
         new_belief[i] = X__[index];
+    }
+
+    // Add some random particles with probability 0.05
+    for (int i = 0; i < X_N__; ++i) {
+        if (utility::get_random_number() < 0.05) {  //5% chance of random particle
+            // Create a random particle near the current estimated position
+            double mean_x = 0.0, mean_y = 0.0;
+            for (int j = 0; j < X_N__; j++) {
+                mean_x += X__[j].r.get_x() / X_N__;
+                mean_y += X__[j].r.get_y() / X_N__;
+            }
+            
+            Robot r;
+            r.set_states(
+                mean_x + utility::get_gaussian_random_number(0.0, 1.0),
+                mean_y + utility::get_gaussian_random_number(0.0, 1.0),
+                utility::get_random_number() * 2.0 * M_PI
+            );
+            // r.set_noise(noise_fwd, noise_fwd, noise_fwd);
+            r.set_noise(0.05, 0.05, 0.05);
+            new_belief[i] = particle{r, 0.05 * max_weight__};  // Give it a reasonable weight
+        }
     }
 }

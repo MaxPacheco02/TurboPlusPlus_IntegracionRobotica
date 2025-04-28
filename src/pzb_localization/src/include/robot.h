@@ -23,14 +23,17 @@ class Robot
 {
 public:
     Robot();
-    
+
     // Set robot's states
     void set_states(double new_x, double new_y, double new_orient);
     // Set robots state transition noise
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
     // Sense the environment with sensors
-    __host__ __device__ void sense(const Point *map, int map_N, Point* local_map, int local_map_N, 
-        double *sensor, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
+    __host__ __device__ void sense(const Point *map, int map_N, Point *local_map, int local_map_N,
+                                   double *sensor, double ang_sep, geometry_msgs::msg::Pose ext_pose, bool noise);
+
+    __host__ __device__ void transform_measurements(double *meas, double *local_meas, int meas_N, geometry_msgs::msg::Transform tf_cmd, double ang_sep);
+
     // Move the robot
     __host__ __device__ void move(geometry_msgs::msg::Transform tf_cmd);
     // Update pose msg
@@ -60,7 +63,6 @@ private:
     static double forward_noise__;
     static double turn_noise__;
     static double sense_noise__;
-
 };
 
 #endif /* ROBOT_H */
