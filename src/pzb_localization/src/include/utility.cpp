@@ -30,22 +30,30 @@ __host__ __device__ double get_measurement_prob(
     int sensor_N,
     double var)
 {
-    double prob = 1.0;
+    double log_prob = 0.0;
+    const double denominator = 2.0 * var * var;
     
-    #ifdef __CUDA_ARCH__
-    // Device code path - simplified computation
-    for (int i = 0; i < sensor_N; i++) {
+    // Only consider a subset of measurements for efficiency and robustness
+    const int max_rays_to_consider = std::min(40, sensor_N);
+    const int step = sensor_N / max_rays_to_consider;
+    
+    int count = 0;
+    for (int i = 0; i < sensor_N; i += std::max(1, step)) {
+        if (count >= max_rays_to_consider) break;
+        
+        // Skip invalid measurements (too large or too small)
+        if (std::isnan(sensor[i]) || std::isnan(measurement[i]) || 
+            measurement[i] < 0.01 || sensor[i] < 0.01) {
+            continue;
+        }
+            
         const double diff = measurement[i] - sensor[i];
-        prob *= exp(-(diff * diff) / (2.0 * var * var));
+        log_prob += -(diff * diff) / denominator;
+        count++;
     }
-    #else
-    // Host code path - full computation
-    for (int i = 0; i < sensor_N; i++) {
-        prob *= get_gaussian_probability(measurement[i], var, sensor[i]);
-    }
-    #endif
-
-    return prob;
+    
+    // Convert back from log space
+    return exp(log_prob);
 }
 
 } // namespace utility

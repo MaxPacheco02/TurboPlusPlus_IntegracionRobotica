@@ -38,24 +38,29 @@ __host__ __device__ void Robot::sense(
         double dy = local_map[i].y - ext_pose.position.y;
         double dist = sqrt(dx * dx + dy * dy);
 
-        #ifdef __CUDA_ARCH__
-        // Device code path
         if (add_noise) {
-            dist += utility::get_gaussian_random_number(0.0, 0.01); // Reduced noise
-        }
-        sensor[i] = dist;
-        #else
-        // Host code path
-        std::cout << "Sensor " << i << ": distance = " << dist;
-        if (add_noise) {
-            // Add small, bounded noise
-            const double noise_std = 0.01;  // 1cm standard deviation
+            // Add realistic noise model:
+            // - Proportional to distance (longer ranges have more noise)
+            // - With a minimum floor value
+            double noise_std = std::max(0.02, 0.01 * dist); // 1% of distance or 2cm, whichever is larger
+            
+            #ifdef __CUDA_ARCH__
+            // Device code path
+            dist += utility::get_gaussian_random_number(0.0, noise_std);
+            #else
+            // Host code path
             double noise = utility::get_gaussian_random_number(0.0, noise_std);
-            noise = std::max(-dist * 0.1, std::min(dist * 0.1, noise));  // Limit noise to ±10% of measurement
+            // Bound the noise to prevent extreme values
             dist += noise;
+            #endif
         }
+        
         sensor[i] = dist;
-        std::cout << ", with noise = " << sensor[i] << std::endl;
+        
+        #ifndef __CUDA_ARCH__
+        if (i < 5) { // Log first few measurements for debugging
+            std::cout << "Sensor " << i << ": distance = " << dist << std::endl;
+        }
         #endif
     }
 }

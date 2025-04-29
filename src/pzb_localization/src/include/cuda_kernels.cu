@@ -12,10 +12,7 @@ extern cudaError_t checkCuda(cudaError_t result);
 __constant__ float d_noise_params[3]; // forward_noise, turn_noise, sense_noise
 __constant__ int d_grid_params[2];    // number of rays, measurements per thread
 
-struct DeviceParticle
-{
-    float x, y, theta, weight;
-};
+struct DeviceParticle;
 
 // Forward declarations of kernel functions
 __global__ void setupRandomStates(curandState *states, unsigned long seed, int N);
@@ -159,17 +156,17 @@ static CUDAMemoryManager g_memoryManager;
 // Kernel implementations
 
 __device__ double calculateMeasurementLikelihood(
-    double predicted, 
-    double actual, 
-    double var) 
+    double predicted,
+    double actual,
+    double var)
 {
     const double diff = predicted - actual;
     const double squared_diff = diff * diff;
-    
+
     // More robust likelihood function with bounded minimum
     const double min_likelihood = 1e-3;
-    const double max_squared_diff = 8.0 * var;  // Allow larger differences
-    
+    const double max_squared_diff = 8.0 * var; // Allow larger differences
+
     double likelihood = exp(-squared_diff / max_squared_diff);
     return fmax(likelihood, min_likelihood);
 }
@@ -184,41 +181,40 @@ __global__ void calculateWeightsKernel(
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N) return;
 
-    float total_likelihood = 1.0f;
-    const float measurement_var = d_noise_params[2] * d_noise_params[2];
+    float total_log_likelihood = 0.0f;
+    const float measurement_var = 0.08f;  // Might need tuning
     int valid_measurements = 0;
     
-    // Get particle's orientation
-    const float particle_theta = particles[idx].theta;
-    
-    // Calculate number of rays to shift based on particle orientation
-    const float angle_per_ray = (2.0f * M_PI) / num_rays;
-    const int ray_shift = static_cast<int>(particle_theta / angle_per_ray + 0.5f);
-    
-    // Use fewer measurements to reduce correlation
-    const int measurement_stride = 4;  // Reduced from 8 for better orientation sensitivity
-    for (int j = 0; j < num_rays; j += measurement_stride) {
-        // Get index with orientation shift
-        int shifted_idx = (j + ray_shift) % num_rays;
-        float predicted = measurements[idx * num_rays + j];
-        float actual = actual_measurements[shifted_idx];
+    for (int j = 0; j < num_rays; j += 2) {
+        const float predicted = measurements[idx * num_rays + j];
+        const float actual = actual_measurements[j];
         
-        if (predicted > 0.0f && actual > 0.0f) {
-            float likelihood = calculateMeasurementLikelihood(
-                predicted, actual, measurement_var);
-            total_likelihood *= likelihood;
+        if (predicted > 0.1f && actual > 0.1f) {
+            const float diff = predicted - actual;
+            const float squared_diff = diff * diff;
+            
+            // More aggressive likelihood function
+            float log_likelihood = -squared_diff / (2.0f * measurement_var);
+            total_log_likelihood += log_likelihood;
             valid_measurements++;
         }
     }
-
+    
     // Calculate final weight
-    if (valid_measurements > 0) {
-        // Take nth root to prevent numerical underflow
-        const float power = 1.0f / (valid_measurements * 2.0f);
-        particles[idx].weight = powf(total_likelihood, power);
+    float weight;
+    if (valid_measurements > 5) {
+        // Convert from log space and apply exponential scaling
+        weight = expf(total_log_likelihood * 1.5f);  // Multiply by 2 to make differences more pronounced
+        
+        // Ensure reasonable bounds
+        const float min_weight = 1e-6f;
+        const float max_weight = 1.0f;
+        weight = fmaxf(fminf(weight, max_weight), min_weight);
     } else {
-        particles[idx].weight = 1e-3f;  // Minimum weight for invalid measurements
+        weight = 1e-10f;  // Very low weight for particles with few valid measurements
     }
+    
+    particles[idx].weight = weight;
 }
 
 __global__ void setupRandomStates(curandState *states, unsigned long seed, int N)
@@ -249,8 +245,16 @@ __global__ void raycastKernel(
     const float particle_theta = particles[particle_idx].theta;
 
     // Calculate ray angle relative to particle's orientation
-    const float ray_angle = particle_theta + ray_idx * angle_sep;  // Start from particle's orientation
+    float ray_angle = particle_theta + ray_idx * angle_sep;
+
+    // Normalize angle to [-π, π]
+    while (ray_angle > M_PI)
+        ray_angle -= 2.0f * M_PI;
+    while (ray_angle < -M_PI)
+        ray_angle += 2.0f * M_PI;
+
     float min_dist = INFINITY;
+    int closest_idx = -1;
 
     // Use shared memory for temporary calculations
     __shared__ float distances[256]; // Assuming max threads per block = 256
@@ -262,17 +266,21 @@ __global__ void raycastKernel(
         float dy = map[i].y - particle_y;
         float dist = sqrtf(dx * dx + dy * dy);
 
-        float angle = atan2f(dy, dx);
-        
+        float point_angle = atan2f(dy, dx);
+
         // Normalize angle difference to [-π, π]
-        float angle_diff = angle - ray_angle;
-        while (angle_diff > M_PI) angle_diff -= 2 * M_PI;
-        while (angle_diff < -M_PI) angle_diff += 2 * M_PI;
+        float angle_diff = point_angle - ray_angle;
+        while (angle_diff > M_PI)
+            angle_diff -= 2.0f * M_PI;
+        while (angle_diff < -M_PI)
+            angle_diff += 2.0f * M_PI;
         angle_diff = fabsf(angle_diff);
 
-        if (angle_diff < 0.1f && dist < min_dist)
+        const float angle_threshold = 0.1f * angle_sep;
+        if (angle_diff < angle_threshold && dist < min_dist)
         {
             min_dist = dist;
+            closest_idx = i;
         }
     }
 
@@ -290,42 +298,49 @@ __global__ void raycastKernel(
 }
 
 __global__ void moveParticlesKernel(
-    DeviceParticle* particles,
+    DeviceParticle *particles,
     int N,
     float turn,
     float forward,
-    curandState* states)
+    curandState *states)
 {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
+    if (idx >= N)
+        return;
 
     // Get current particle state
     float x = particles[idx].x;
     float y = particles[idx].y;
     float theta = particles[idx].theta;
 
-    // Calculate noisy control inputs
-    float turn_noise = curand_normal(&states[idx]) * d_noise_params[1];
-    float forward_noise = curand_normal(&states[idx]) * d_noise_params[0];
-    
-    // Apply turn first (with noise)
-    float noisy_turn = turn + turn_noise;
-    theta += noisy_turn;
-    
-    // Normalize theta to [-π, π]
-    while (theta > M_PI) theta -= 2 * M_PI;
-    while (theta < -M_PI) theta += 2 * M_PI;
-    
-    // Apply forward motion in the new direction (with noise)
-    float noisy_forward = forward + forward_noise;
-    x += noisy_forward * cosf(theta);
-    y += noisy_forward * sinf(theta);
-    
-    // Add small random walk for diversity (prevents particle depletion)
-    const float diversity_scale = 0.001f;
-    x += curand_normal(&states[idx]) * diversity_scale;
-    y += curand_normal(&states[idx]) * diversity_scale;
-    theta += curand_normal(&states[idx]) * diversity_scale;
+    // Only apply motion if there is actual movement
+    if (fabs(forward) > 1e-6 || fabs(turn) > 1e-6)
+    {
+        // Calculate noisy control inputs - scale noise with motion magnitude
+        float turn_noise = curand_normal(&states[idx]) * d_noise_params[1] * fmaxf(0.1f, fabs(turn));
+        float forward_noise = curand_normal(&states[idx]) * d_noise_params[0] * fmaxf(0.1f, forward);
+
+        // Apply turn first (with noise)
+        float noisy_turn = turn + turn_noise;
+        theta += noisy_turn;
+
+        // Normalize theta to [-π, π]
+        while (theta > M_PI)
+            theta -= 2 * M_PI;
+        while (theta < -M_PI)
+            theta += 2 * M_PI;
+
+        // Apply forward motion in the new direction (with noise)
+        float noisy_forward = forward + forward_noise;
+        x += noisy_forward * cosf(theta);
+        y += noisy_forward * sinf(theta);
+
+        // Add minimal diversity noise
+        const float min_noise = 0.0001f;
+        x += curand_normal(&states[idx]) * min_noise;
+        y += curand_normal(&states[idx]) * min_noise;
+        theta += curand_normal(&states[idx]) * min_noise;
+    }
 
     // Store updated state
     particles[idx].x = x;
@@ -363,65 +378,96 @@ extern "C"
     }
 
     void particlesSensing(
-        particle *X,
-        int X_N,
-        double *Z,
-        int Z_N,
-        Point *map,
-        int map_N,
+        particle* X, int X_N,
+        double* Z, int Z_N,
+        Point* map, int map_N,
         double ang_sep)
     {
-        // Update device particles
-        g_memoryManager.updateParticles(X, X_N);
-
-        // Allocate device memory for measurements
-        float *d_measurements;
-        float *d_actual_measurements;
+        // Print actual measurements for debugging
+        std::cout << "\nActual measurements (first 5):" << std::endl;
+        for (int i = 0; i < std::min(5, Z_N); i++) {
+            std::cout << "Z[" << i << "] = " << Z[i] << std::endl;
+        }
+    
+        // Allocate device memory
+        float* d_measurements;
+        float* d_actual_measurements;
         cudaMalloc(&d_measurements, X_N * Z_N * sizeof(float));
         cudaMalloc(&d_actual_measurements, Z_N * sizeof(float));
-
-        // Copy actual measurements to device
-        float *h_actual_measurements = new float[Z_N];
-        for (int i = 0; i < Z_N; i++)
-        {
+    
+        // Convert actual measurements to float
+        float* h_actual_measurements = new float[Z_N];
+        for (int i = 0; i < Z_N; i++) {
             h_actual_measurements[i] = static_cast<float>(Z[i]);
         }
+    
+        // Copy to device
         cudaMemcpy(d_actual_measurements, h_actual_measurements,
                    Z_N * sizeof(float), cudaMemcpyHostToDevice);
-        delete[] h_actual_measurements;
-
-        // Launch raycast kernel
+    
+        // Convert particles
+        DeviceParticle* d_particles;
+        cudaMalloc(&d_particles, X_N * sizeof(DeviceParticle));
+        DeviceParticle* h_particles = new DeviceParticle[X_N];
+        
+        for (int i = 0; i < X_N; i++) {
+            h_particles[i].x = X[i].r.get_x();
+            h_particles[i].y = X[i].r.get_y();
+            h_particles[i].theta = X[i].r.get_theta();
+            h_particles[i].weight = X[i].w;
+        }
+        
+        cudaMemcpy(d_particles, h_particles,
+                   X_N * sizeof(DeviceParticle), cudaMemcpyHostToDevice);
+    
+        // First get predicted measurements
         raycastKernel<<<X_N, Z_N>>>(
-            g_memoryManager.map(),
-            g_memoryManager.mapSize(),
-            g_memoryManager.particles(),
+            map, map_N,
+            d_particles,
             d_measurements,
             Z_N,
             ang_sep * M_PI / 180.0);
-
-        // Launch weight calculation kernel
-        const int threadsPerBlock = 256;
-        const int blocks = (X_N + threadsPerBlock - 1) / threadsPerBlock;
-
-        calculateWeightsKernel<<<blocks, threadsPerBlock>>>(
-            g_memoryManager.particles(),
+    
+        // Then calculate weights
+        dim3 blockDim(256);
+        dim3 gridDim((X_N + blockDim.x - 1) / blockDim.x);
+    
+        calculateWeightsKernel<<<gridDim, blockDim>>>(
+            d_particles,
             d_measurements,
             d_actual_measurements,
             X_N,
             Z_N);
-
-        // Check for errors
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(err));
+    
+        // Copy back results
+        cudaMemcpy(h_particles, d_particles,
+                   X_N * sizeof(DeviceParticle), cudaMemcpyDeviceToHost);
+    
+        // Convert back to host particles
+        for (int i = 0; i < X_N; i++) {
+            X[i].r.set_states(h_particles[i].x, h_particles[i].y, h_particles[i].theta);
+            X[i].w = h_particles[i].weight;
         }
-
+    
+        // Print some debug info
+        std::cout << "\nWeight distribution after update:" << std::endl;
+        float min_w = 1.0f, max_w = 0.0f, sum_w = 0.0f;
+        for (int i = 0; i < X_N; i++) {
+            min_w = fmin(min_w, X[i].w);
+            max_w = fmax(max_w, X[i].w);
+            sum_w += X[i].w;
+        }
+        std::cout << "Min weight: " << min_w << std::endl;
+        std::cout << "Max weight: " << max_w << std::endl;
+        std::cout << "Average weight: " << sum_w/X_N << std::endl;
+    
         // Cleanup
+        delete[] h_actual_measurements;
+        delete[] h_particles;
         cudaFree(d_measurements);
         cudaFree(d_actual_measurements);
-
-        // Retrieve updated particles
-        g_memoryManager.retrieveParticles(X, X_N);
+        cudaFree(d_particles);
     }
+
+
 } // extern "C"

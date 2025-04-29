@@ -131,6 +131,7 @@ int map2arr(
     return count;
 }
 
+
 __device__ __host__ void compute_raycast(
     const Point* map, int map_N,
     Point* local_map,
@@ -142,14 +143,23 @@ __device__ __host__ void compute_raycast(
         source_pose.position.y
     };
 
+    // Get robot's orientation from quaternion
+    double robot_yaw = tf2::getYaw(source_pose.orientation);
+    
     // Convert to radians and compute constants
     const double angle_resolution = angle_separation * M_PI / 180.0;
     const int num_rays = static_cast<int>(2.0 * M_PI / angle_resolution) + 1;
     const double angle_threshold = 0.1 * angle_resolution;
 
-    // Process each ray
+    // Process each ray, starting from robot's orientation
     for (int i = 0; i < num_rays; ++i) {
-        const double ray_angle = i * angle_resolution;
+        // Calculate ray angle relative to robot's heading
+        double ray_angle = robot_yaw + i * angle_resolution;
+        
+        // Normalize angle to [-π, π]
+        while (ray_angle > M_PI) ray_angle -= 2.0 * M_PI;
+        while (ray_angle < -M_PI) ray_angle += 2.0 * M_PI;
+        
         double closest_dist = INFINITY;
         Point closest_point{0.0, 0.0};
 
@@ -158,26 +168,81 @@ __device__ __host__ void compute_raycast(
             const double dx = map[j].x - source.x;
             const double dy = map[j].y - source.y;
             const double dist = sqrt(dx * dx + dy * dy);
+            
+            // Calculate angle to point
             double point_angle = atan2(dy, dx);
+            
+            // Normalize angle difference to [-π, π]
+            double angle_diff = point_angle - ray_angle;
+            while (angle_diff > M_PI) angle_diff -= 2.0 * M_PI;
+            while (angle_diff < -M_PI) angle_diff += 2.0 * M_PI;
+            angle_diff = fabs(angle_diff);
 
-            // Normalize angle
-            if (point_angle < 0) {
-                point_angle += 2.0 * M_PI;
-            }
-
-            // Compute angle difference
-            double diff = fabs(point_angle - ray_angle);
-            if (diff > M_PI) {
-                diff = 2.0 * M_PI - diff;
-            }
-
-            // Update if this is the closest point so far
-            if (diff < angle_threshold && dist < closest_dist) {
+            // Update if this is the closest point within threshold
+            if (angle_diff < angle_threshold && dist < closest_dist) {
                 closest_dist = dist;
                 closest_point = map[j];
             }
         }
 
         local_map[i] = closest_point;
+        
+        #ifndef __CUDA_ARCH__
+        // Debug output for host code (first few rays)
+        if (i < 5) {
+            printf("Ray %d: angle=%.2f (deg), distance=%.3f\n", 
+                   i, ray_angle * 180.0 / M_PI, closest_dist);
+        }
+        #endif
     }
+}
+
+void print_raycast_comparison(
+    const Point* map, int map_N,
+    const DeviceParticle* particle,
+    float* measurements,
+    int num_rays,
+    double angle_sep,
+    int particle_idx) 
+{
+    // Create pose for compute_raycast
+    geometry_msgs::msg::Pose pose;
+    pose.position.x = particle->x;
+    pose.position.y = particle->y;
+    
+    tf2::Quaternion q;
+    q.setRPY(0, 0, particle->theta);
+    tf2::convert(q, pose.orientation);
+
+    // Run host raycast
+    Point* local_map = new Point[num_rays];
+    compute_raycast(map, map_N, local_map, pose, angle_sep);
+
+    // Compare with device raycast
+    std::cout << "\nRaycast comparison for particle " << particle_idx << ":" << std::endl;
+    std::cout << "Particle pose: x=" << particle->x 
+              << ", y=" << particle->y 
+              << ", theta=" << particle->theta << std::endl;
+
+    // Calculate distances for host raycast
+    std::vector<float> host_distances(num_rays);
+    for (int i = 0; i < num_rays; i++) {
+        float dx = local_map[i].x - particle->x;
+        float dy = local_map[i].y - particle->y;
+        host_distances[i] = sqrt(dx * dx + dy * dy);
+    }
+
+    // Print first 10 measurements
+    std::cout << "First 10 rays:" << std::endl;
+    std::cout << "Ray\tHost\tDevice\tDiff" << std::endl;
+    for (int i = 0; i < std::min(10, num_rays); i++) {
+        float device_dist = measurements[particle_idx * num_rays + i];
+        float diff = fabs(host_distances[i] - device_dist);
+        std::cout << i << "\t" 
+                  << host_distances[i] << "\t" 
+                  << device_dist << "\t"
+                  << diff << std::endl;
+    }
+
+    delete[] local_map;
 }
