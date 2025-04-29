@@ -25,7 +25,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <geometry>
           <mesh>
             <uri>file://pzb/meshes/pzb_lidar.dae</uri>
-            <scale>1 1 1</scale>
+            <scale>1 1 0.1</scale>
           </mesh>
         </geometry>
         <surface>
@@ -75,7 +75,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
             <resolution>0.01</resolution>
           </range>
         </lidar>
-        <alwaysOn>1</alwaysOn>
+        <!-- <alwaysOn>1</alwaysOn> -->
         <visualize>true</visualize>
         <plugin
           filename="RosGzPointCloud"
@@ -114,14 +114,14 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <surface>
           <friction>
             <ode>
-              <mu>1e+10</mu>
-              <mu2>1e+10</mu2>
+              <mu>1e+3</mu>
+              <mu2>1e+3</mu2>
             </ode>
           </friction>
         </surface>        
       </collision>
       <inertial>
-        <mass>0.5</mass>
+        <mass>5.0</mass>
         <inertia>
           <ixx>0.001</ixx>
           <ixy>0</ixy>
@@ -160,14 +160,14 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <surface>
           <friction>
             <ode>
-              <mu>1e+10</mu>
-              <mu2>1e+10</mu2>
+              <mu>1e+3</mu>
+              <mu2>1e+3</mu2>
             </ode>
           </friction>
         </surface>        
       </collision>
       <inertial>
-        <mass>0.5</mass>
+        <mass>5.0</mass>
         <inertia>
           <ixx>0.001</ixx>
           <ixy>0</ixy>
@@ -239,8 +239,8 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
     <plugin
       filename="gz-sim-diff-drive-system"
       name="gz::sim::systems::DiffDrive">
-      <left_joint>left_wheel_joint</left_joint>
-      <right_joint>right_wheel_joint</right_joint>
+      <left_joint>right_wheel_joint</left_joint>
+      <right_joint>left_wheel_joint</right_joint>
       <topic>/pzb_gz_drive</topic>
     </plugin>
 

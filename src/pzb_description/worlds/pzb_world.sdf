@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version="1.0"?>
 
 <sdf version="1.9">
   <world name="pzb_world">
@@ -22,9 +22,16 @@
         <scene>scene</scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
         <background_color>0.8 0.8 0.8</background_color>
-        <camera_pose> 0.2305767834186554 -0.29381692409515381 0.39275604486465454 0 0.5272 2.4282</camera_pose>
+        <camera_pose>
+          1.019200
+          0.809144
+          3.840268
+          -3.140262
+          1.569392
+          -1.589614
+        </camera_pose>
         <camera_clip>
-          <near>0.25</near>
+          <near>0.01</near>
           <far>10000</far>
         </camera_clip>
       </plugin>
@@ -77,8 +84,8 @@
       <plugin filename="SelectEntities" name="Select Entities">
         <gz-gui>
           <anchors target="Select entities">
-            <line own="right" target="right"/>
-            <line own="top" target="top"/>
+            <line own="right" target="right" />
+            <line own="top" target="top" />
           </anchors>
           <property key="resizable" type="bool">false</property>
           <property key="width" type="double">5</property>
@@ -100,8 +107,8 @@
       <plugin filename="Spawn" name="Spawn Entities">
         <gz-gui>
           <anchors target="Select entities">
-            <line own="right" target="right"/>
-            <line own="top" target="top"/>
+            <line own="right" target="right" />
+            <line own="top" target="top" />
           </anchors>
           <property key="resizable" type="bool">false</property>
           <property key="width" type="double">5</property>
@@ -123,8 +130,8 @@
 
           <property type="string" key="state">floating</property>
           <anchors target="3D View">
-            <line own="left" target="left"/>
-            <line own="bottom" target="bottom"/>
+            <line own="left" target="left" />
+            <line own="bottom" target="bottom" />
           </anchors>
         </gz-gui>
 
@@ -147,8 +154,8 @@
 
           <property type="string" key="state">floating</property>
           <anchors target="3D View">
-            <line own="right" target="right"/>
-            <line own="bottom" target="bottom"/>
+            <line own="right" target="right" />
+            <line own="bottom" target="bottom" />
           </anchors>
         </gz-gui>
 
@@ -309,8 +316,6 @@
       name="gz::sim::systems::NavSat">
     </plugin>
 
-    <!-- Estimated latitude/longitude of Nathan Benderson Park
-         from satellite imagery -->
     <spherical_coordinates>
       <surface_model>EARTH_WGS84</surface_model>
       <world_frame_orientation>ENU</world_frame_orientation>
@@ -334,39 +339,16 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Load the plugin for the wind --> 
-      <!-- Wind -->
-      <!-- in degrees -->
-      <!-- set to zero/empty to randomize -->
-    <!-- <plugin
-      filename="libUSVWind.so"
-      name="vrx::USVWind">
-      <wind_obj>
-        <name>wamv</name>
-        <link_name>wamv/base_link</link_name>
-        <coeff_vector>.5 .5 .33</coeff_vector>
-      </wind_obj>
-      <wind_direction>240</wind_direction>
-      <wind_mean_velocity>0.0</wind_mean_velocity>
-      <var_wind_gain_constants>0</var_wind_gain_constants>
-      <var_wind_time_constants>2</var_wind_time_constants>
-      <random_seed>10</random_seed>
-      <update_rate>10</update_rate>
-      <topic_wind_speed>/usv_description/debug/wind/speed</topic_wind_speed>
-      <topic_wind_direction>/usv_description/debug/wind/direction</topic_wind_direction>
-     </plugin> -->
-
-    <!-- Nathan Benderson Park -->
-    <!-- <include>
-      <pose>0 0 -5 0 0 0</pose>
-      <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/nathan_benderson_park</uri>
-    </include> -->
-
-    <!-- VTec - SIII -->
     <include>
       <name>pzb</name>
       <pose>0 0 0.085 0 0 0</pose>
       <uri>pzb</uri>
+    </include>
+
+    <include>
+      <name>map</name>
+      <pose>-1.58 2.15 0.05 0 0 0</pose>
+      <uri>map</uri>
     </include>
 
     <model name="ground_plane">
@@ -382,7 +364,7 @@
           <surface>
             <friction>
               <ode>
-                <mu>50</mu>
+                <mu>10</mu>
               </ode>
               <bullet>
                 <friction>1</friction>
