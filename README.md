@@ -1,9 +1,15 @@
 # Turbo++ IntegracionRobotica TE3003B.501
 
-<div align="center">
+<!-- For when 2 images / gifs -->
+<!-- <div align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/mcl1.gif" width="236" height="297"/>
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/pc2.gif" width="533" height="297"/>
+</div> -->
+
+<div align="center">
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/nvcc_mpc_x5.gif" width="800" height="569"/>
 </div>
+
 
 <div style="clear:both; margin-bottom:340px;"></div>
 

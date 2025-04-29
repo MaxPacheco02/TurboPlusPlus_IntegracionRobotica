@@ -6,6 +6,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "geometry_msgs/msg/pose.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/utils.hpp"
 #include "MCL.h"
@@ -21,8 +22,9 @@ private:
     void initializeParameters();
     void initializePublishersAndSubscribers();
     void initializeMessages();
-    void initializeMCLComponents();
+    void initializeMCLComponents(double init_x, double init_y, double init_theta);
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void estimateCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
     void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void calcControl();
     void update();
@@ -33,6 +35,7 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mcl_pub_;
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_estimate_sub_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     // Messages

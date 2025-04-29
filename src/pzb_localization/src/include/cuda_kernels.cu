@@ -204,14 +204,14 @@ __global__ void calculateWeightsKernel(
     float weight;
     if (valid_measurements > 5) {
         // Convert from log space and apply exponential scaling
-        weight = expf(total_log_likelihood * 1.5f);  // Multiply by 2 to make differences more pronounced
+        weight = expf(total_log_likelihood * 5.5f);  // Multiply by 2 to make differences more pronounced
         
         // Ensure reasonable bounds
         const float min_weight = 1e-6f;
         const float max_weight = 1.0f;
         weight = fmaxf(fminf(weight, max_weight), min_weight);
     } else {
-        weight = 1e-10f;  // Very low weight for particles with few valid measurements
+        weight = 1e-6f;  // Very low weight for particles with few valid measurements
     }
     
     particles[idx].weight = weight;

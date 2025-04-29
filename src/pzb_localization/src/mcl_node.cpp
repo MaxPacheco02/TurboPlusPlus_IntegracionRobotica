@@ -8,7 +8,9 @@ MCLNode::MCLNode() : Node("mcl_node")
     initializeParameters();
     initializePublishersAndSubscribers();
     initializeMessages();
-    initializeMCLComponents();
+    initializeMCLComponents(0.0, 0.0, 0.0);
+    map_ = nullptr;
+    map_N_ = 0;
 }
 
 MCLNode::~MCLNode()
@@ -49,6 +51,10 @@ void MCLNode::initializePublishersAndSubscribers()
         "/pzb/odom", 10,
         std::bind(&MCLNode::odomCallback, this, std::placeholders::_1));
 
+    initial_estimate_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+        "/initialpose", 10,
+        std::bind(&MCLNode::estimateCallback, this, std::placeholders::_1));
+
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
         "/pzb/map", 10,
         std::bind(&MCLNode::mapCallback, this, std::placeholders::_1));
@@ -78,7 +84,7 @@ void MCLNode::initializeMessages()
     last_pose_ = pose_;
 }
 
-void MCLNode::initializeMCLComponents()
+void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_theta)
 {
     // Initialize robot
     robot_.set_states(0.0, 0.0, 0.0);
@@ -107,20 +113,16 @@ void MCLNode::initializeMCLComponents()
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    
-    // Base position
-    double init_x = pose_.position.x;
-    double init_y = pose_.position.y;
-    double init_theta = tf2::getYaw(pose_.orientation);
-    
+
     // Initialize particles with multiple strategies
     int particles_per_strategy = particles_N_ / 3;
-    
+
     // Strategy 1: Tight normal distribution around initial pose (33%)
     std::normal_distribution<double> tight_pos_dist(0.0, init_pos_var * 0.5);
     std::normal_distribution<double> tight_angle_dist(0.0, init_angle_var * 0.5);
-    
-    for (int i = 0; i < particles_per_strategy; i++) {
+
+    for (int i = 0; i < particles_per_strategy; i++)
+    {
         Robot r;
         r.set_states(
             init_x + tight_pos_dist(gen),
@@ -129,12 +131,13 @@ void MCLNode::initializeMCLComponents()
         r.set_noise(0.02, 0.05, 0.02);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
-    
+
     // Strategy 2: Wider normal distribution (33%)
     std::normal_distribution<double> wide_pos_dist(0.0, init_pos_var);
     std::normal_distribution<double> wide_angle_dist(0.0, init_angle_var);
-    
-    for (int i = particles_per_strategy; i < 2 * particles_per_strategy; i++) {
+
+    for (int i = particles_per_strategy; i < 2 * particles_per_strategy; i++)
+    {
         Robot r;
         r.set_states(
             init_x + wide_pos_dist(gen),
@@ -143,31 +146,34 @@ void MCLNode::initializeMCLComponents()
         r.set_noise(0.02, 0.05, 0.02);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
-    
+
     // Strategy 3: Uniform grid with small random offset (remaining particles)
     const int grid_size = static_cast<int>(sqrt(particles_N_ - 2 * particles_per_strategy));
-    const double grid_span = 0.5;  // 50cm total grid span
+    const double grid_span = 0.5; // 50cm total grid span
     const double grid_spacing = grid_span / grid_size;
-    
+
     int particle_idx = 2 * particles_per_strategy;
     std::uniform_real_distribution<double> small_offset(-grid_spacing * 0.25, grid_spacing * 0.25);
-    std::uniform_real_distribution<double> angle_offset(-0.1, 0.1);  // ~±5.7 degrees
-    
-    for (int i = 0; i < grid_size && particle_idx < particles_N_; i++) {
-        for (int j = 0; j < grid_size && particle_idx < particles_N_; j++) {
-            double x = init_x + (i - grid_size/2) * grid_spacing + small_offset(gen);
-            double y = init_y + (j - grid_size/2) * grid_spacing + small_offset(gen);
+    std::uniform_real_distribution<double> angle_offset(-0.1, 0.1); // ~±5.7 degrees
+
+    for (int i = 0; i < grid_size && particle_idx < particles_N_; i++)
+    {
+        for (int j = 0; j < grid_size && particle_idx < particles_N_; j++)
+        {
+            double x = init_x + (i - grid_size / 2) * grid_spacing + small_offset(gen);
+            double y = init_y + (j - grid_size / 2) * grid_spacing + small_offset(gen);
             double theta = init_theta + angle_offset(gen);
-            
+
             Robot r;
             r.set_states(x, y, theta);
             r.set_noise(0.02, 0.05, 0.02);
             particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
         }
     }
-    
+
     // Fill any remaining particles with wider distribution
-    while (particle_idx < particles_N_) {
+    while (particle_idx < particles_N_)
+    {
         Robot r;
         r.set_states(
             init_x + wide_pos_dist(gen) * 1.5,
@@ -179,19 +185,25 @@ void MCLNode::initializeMCLComponents()
 
     // Print first few particles for debugging
     std::cout << "Initial particle distribution (first 5):" << std::endl;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; i++)
+    {
         std::cout << "Particle " << i << ": x=" << particles_[i].r.get_x()
                   << ", y=" << particles_[i].r.get_y()
                   << ", theta=" << particles_[i].r.get_theta() << std::endl;
     }
-
-    map_ = nullptr;
-    map_N_ = 0;
 }
 
 void MCLNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     pose_ = msg->pose.pose;
+}
+
+void MCLNode::estimateCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
+{
+    initializeMCLComponents(
+        msg->pose.pose.position.x,
+        msg->pose.pose.position.y,
+        tf2::getYaw(msg->pose.pose.orientation));
 }
 
 void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
@@ -228,15 +240,19 @@ void MCLNode::calcControl()
     double dx = pose_.position.x - last_pose_.position.x;
     double dy = pose_.position.y - last_pose_.position.y;
 
-    // Get yaw angles 
+    // Get yaw angles
     double yaw = tf2::getYaw(pose_.orientation);
     double yaw_last = tf2::getYaw(last_pose_.orientation);
-    
+
     // Normalize angles to [-π, π]
-    while (yaw > M_PI) yaw -= 2*M_PI;
-    while (yaw < -M_PI) yaw += 2*M_PI;
-    while (yaw_last > M_PI) yaw_last -= 2*M_PI;
-    while (yaw_last < -M_PI) yaw_last += 2*M_PI;
+    while (yaw > M_PI)
+        yaw -= 2 * M_PI;
+    while (yaw < -M_PI)
+        yaw += 2 * M_PI;
+    while (yaw_last > M_PI)
+        yaw_last -= 2 * M_PI;
+    while (yaw_last < -M_PI)
+        yaw_last += 2 * M_PI;
 
     // Debug output
     std::cout << "\nControl update details:" << std::endl;
@@ -249,34 +265,46 @@ void MCLNode::calcControl()
 
     // Calculate turn in the correct direction
     control_.turn = yaw - yaw_last;
-    
+
     // Normalize turn angle to [-π, π]
-    while (control_.turn > M_PI) control_.turn -= 2*M_PI;
-    while (control_.turn < -M_PI) control_.turn += 2*M_PI;
+    while (control_.turn > M_PI)
+        control_.turn -= 2 * M_PI;
+    while (control_.turn < -M_PI)
+        control_.turn += 2 * M_PI;
 
     // Calculate distance moved
     double distance = sqrt(dx * dx + dy * dy);
 
     // If distance is significant, determine forward/backward motion in robot's local frame
-    if (distance > 0.001) {
+    if (distance > 0.001)
+    {
         double global_heading = atan2(dy, dx);
-        
+
         // Normalize angles for comparison
-        while (global_heading > M_PI) global_heading -= 2*M_PI;
-        while (global_heading < -M_PI) global_heading += 2*M_PI;
-        
+        while (global_heading > M_PI)
+            global_heading -= 2 * M_PI;
+        while (global_heading < -M_PI)
+            global_heading += 2 * M_PI;
+
         // Calculate heading difference
         double heading_diff = global_heading - yaw_last;
-        while (heading_diff > M_PI) heading_diff -= 2*M_PI;
-        while (heading_diff < -M_PI) heading_diff += 2*M_PI;
-        
+        while (heading_diff > M_PI)
+            heading_diff -= 2 * M_PI;
+        while (heading_diff < -M_PI)
+            heading_diff += 2 * M_PI;
+
         // If heading difference is more than 90 degrees, robot moved backwards
-        if (fabs(heading_diff) > M_PI/2) {
+        if (fabs(heading_diff) > M_PI / 2)
+        {
             control_.forward = -distance;
-        } else {
+        }
+        else
+        {
             control_.forward = distance;
         }
-    } else {
+    }
+    else
+    {
         control_.forward = 0.0;
     }
 
@@ -288,7 +316,8 @@ void MCLNode::calcControl()
     const double min_move = 0.001; // 1mm
     const double min_turn = 0.005; // ~0.3 degrees
 
-    if (fabs(control_.forward) < min_move && fabs(control_.turn) < min_turn) {
+    if (fabs(control_.forward) < min_move && fabs(control_.turn) < min_turn)
+    {
         control_.forward = 0.0;
         control_.turn = 0.0;
     }
@@ -299,7 +328,8 @@ void MCLNode::calcControl()
 
 void MCLNode::update()
 {
-    if (map_ == nullptr || map_N_ == 0) {
+    if (map_ == nullptr || map_N_ == 0)
+    {
         std::cout << "Skipping update: Map not loaded yet" << std::endl;
         return;
     }
@@ -322,14 +352,16 @@ void MCLNode::update()
     calcControl();
 
     // If there's no significant movement, we might skip the update
-    if (fabs(control_.forward) < 0.001 && fabs(control_.turn) < 0.001) {
+    if (fabs(control_.forward) < 0.001 && fabs(control_.turn) < 0.001)
+    {
         static int skip_counter = 0;
         skip_counter++;
-        
+
         // Still update occasionally even with no motion to maintain visualization
-        if (skip_counter % 5 != 0) {
+        if (skip_counter % 5 != 0)
+        {
             std::cout << "Skipping update: No significant motion detected" << std::endl;
-            
+
             // Still publish visualizations
             auto now = this->get_clock()->now();
             map_pc_msg_.header.stamp = now;
@@ -338,7 +370,7 @@ void MCLNode::update()
             map_pc_pub_->publish(map_pc_msg_);
             local_map_pc_pub_->publish(local_map_pc_msg_);
             mcl_pub_->publish(mcl_msg_);
-            
+
             return;
         }
     }

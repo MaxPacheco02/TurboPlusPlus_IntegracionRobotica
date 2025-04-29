@@ -191,7 +191,7 @@ void MCL::resampleParticles(particle *new_belief)
 
     double neff = 1.0 / sum_squared_weights;
     // More conservative resampling threshold
-    const double resample_threshold = num_particles_ * 0.3; // Increased from 0.7
+    const double resample_threshold = num_particles_ * 0.01; // The lower, the higher possibility it will resample. Resampling is good, but costly.
     bool needs_resampling = (neff > resample_threshold);
 
     // Calculate cluster statistics to detect convergence
