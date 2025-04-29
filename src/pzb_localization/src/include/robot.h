@@ -1,64 +1,58 @@
 #ifndef ROBOT_H
 #define ROBOT_H
 
-#include <vector>
-#include <string>
-#include <iostream>
-#include <math.h>
-#include <exception>
-
-#include "utility.h"
-#include "map_utils.h"
-
 #include <geometry_msgs/msg/pose.hpp>
 #include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include "tf2/LinearMath/Quaternion.h"
+#include <cuda_runtime.h>
+#include "map_utils.h"
+#include "utility.h"
 
-class Robot
-{
+/**
+ * Robot class representing the physical robot's state and behaviors
+ */
+class Robot {
 public:
     Robot();
     
-    Robot(geometry_msgs::msg::Pose pose);
-    // Set robot's states
+    // State management
     void set_states(double new_x, double new_y, double new_orient);
-    // Set robots state transition noise
     void set_noise(double forward_noise, double turn_noise, double sensor_noise);
-    // Sense the environment with sensors
-    std::vector<double> sense(const std::vector<Point>& map, bool noise = true);
-    std::vector<double> sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise);
-    // Move the robot
-    void move(double turn, double forward);
-    // Update pose msg
-    void update_pose_msg();
-    // get sensor noise
-    double get_sensor_noise();
-    // get x
-    double get_x() const;
-    // get y
-    double get_y() const;
-    // get pose msg
-    geometry_msgs::msg::Pose get_pose_msg() const;
+    
+    // Motion and sensing
+    __host__ __device__ void move(double turn, double forward);
+    __host__ __device__ void sense(
+        const Point* map, int map_N,
+        Point* local_map, int local_map_N,
+        double* sensor, double ang_sep,
+        geometry_msgs::msg::Pose ext_pose,
+        bool noise);
 
-    double get_theta() const;
-    // Get pose readings
-    std::string get_pose();
-    // Get sensor readings
-    std::string get_sensor_readings(const std::vector<Point>& map);
+    // State access
+    __host__ __device__ double get_x() const { return x__; }
+    __host__ __device__ double get_y() const { return y__; }
+    __host__ __device__ double get_theta() const { return orientation__; }
+    __host__ __device__ double get_sensor_noise() const { return sense_noise__; }
+    __host__ __device__ geometry_msgs::msg::Pose get_pose_msg() const { return pose__; }
+    std::string get_pose() const;
+
+    // Constants
+    static constexpr int THREADS_PER_BLOCK = 256;
 
 private:
-    // robot states
-    geometry_msgs::msg::Pose pose__;
-
+    // State variables
     double x__;
     double y__;
     double orientation__;
-    // noise
+    geometry_msgs::msg::Pose pose__;
+
+    // Noise parameters
     static double forward_noise__;
     static double turn_noise__;
     static double sense_noise__;
 
+    // Internal methods
+    void update_pose_msg();
 };
 
 #endif /* ROBOT_H */

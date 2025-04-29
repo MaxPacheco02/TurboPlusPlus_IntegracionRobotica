@@ -1,49 +1,35 @@
 #ifndef MCL_H
 #define MCL_H
 
-#include "robot.h"
+#include "robot_utils.h"
+#include "cuda_kernels.h"
 
-struct particle
-{
-    particle(Robot r, double w);
-    Robot r;
-    double w;
-};
-
-struct command
-{
-    command();
-    command(double f, double t);
-    double forward;
-    double turn;
-};
-
-class MCL
-{
+/**
+ * Monte Carlo Localization implementation
+ */
+class MCL {
 public:
-    MCL(std::vector<particle> X, command U, 
-        std::vector<double> Z, std::vector<Point> map); 
-    // resample the particles and return the new belief
-    std::vector<particle> resample();
+    MCL(particle* X, int X_N, command U, double* Z, 
+        int Z_N, Point* map, int map_N, double ang_sep);
+
+    void resample(particle* new_belief);
 
 private:
-    // map landmarks
-    std::vector<Point> map__;
-    // robot sensor measurements
-    std::vector<double> Z__;
-    // actuation command
-    command U__;
-    // belief
-    std::vector<particle> X__;
-    //maximum weight
-    double max_weight__;
-    // update
-    void motion_update();
-    // predict
-    void sensor_update();
-    // Get measurement probability
-    double get_measurement_prob(std::vector<double> measurements);
+    void motionUpdate();
+    void sensorUpdate();
+    void resampleParticles(particle* new_belief);
+    void normalizeWeights();
+    double findMaxWeight() const;
 
+    particle* particles_;
+    int num_particles_;
+    command cmd_;
+    double* measurements_;
+    int num_measurements_;
+    Point* map_;
+    int num_map_points_;
+    double angle_sep_;
+    double max_weight_;
 };
 
-#endif /* MCL_H */
+#endif // MCL_H

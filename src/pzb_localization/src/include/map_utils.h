@@ -2,54 +2,79 @@
 #define MAP_UTILS_H
 
 #include <geometry_msgs/msg/pose.hpp>
-#include <geometry_msgs/msg/pose_with_covariance.hpp>
-#include <geometry_msgs/msg/point.hpp>
-#include <geometry_msgs/msg/quaternion.hpp>
-
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <sensor_msgs/msg/point_field.hpp>
 
 #include <nav_msgs/msg/occupancy_grid.hpp>
 
-#include <limits>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include "sensor_msgs/point_cloud2_iterator.hpp"
 
-struct Point{
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/utils.hpp"
+
+#include <cuda_runtime.h>
+
+struct DeviceParticle
+{
+    float x, y, theta, weight;
+};
+
+// Basic 2D point structure
+struct Point
+{
     double x;
     double y;
 };
 
-struct PCDiff{
+// Structure for point cloud differencing
+struct PCDiff
+{
     Point p;
     double dist;
     double ang;
 };
 
+/**
+ * Point cloud message operations
+ */
 void resize_pc(
-    sensor_msgs::msg::PointCloud2& pc_msg,
-    int width
-);
+    sensor_msgs::msg::PointCloud2 &pc_msg,
+    int width);
 
 void init_pc_msg(
-    sensor_msgs::msg::PointCloud2& pc_msg
-);
+    sensor_msgs::msg::PointCloud2 &pc_msg);
 
-uint32_t packRGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+uint32_t packRGBA(
+    uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 void fill_pc(
-    sensor_msgs::msg::PointCloud2& pc_msg,
-    const std::vector<Point>& pc_data, 
+    sensor_msgs::msg::PointCloud2 &pc_msg,
+    const Point *map_arr, int map_size,
     uint8_t r, uint8_t g, uint8_t b, uint8_t a,
-    double z
-);
+    double z);
 
-std::vector<Point> map2vec(
-    const nav_msgs::msg::OccupancyGrid& map
-);
+/**
+ * Map conversion operations
+ */
+int map2arr(
+    const nav_msgs::msg::OccupancyGrid &map,
+    Point *points_array,
+    int max_points);
 
-void compute_raycast(
-    const std::vector<Point>& map, std::vector<Point>& visible_points,
-    const geometry_msgs::msg::Pose& source_pose, double angle_separation
-);
+/**
+ * Raycast operations
+ */
+__host__ __device__ void compute_raycast(
+    const Point *map, int map_N,
+    Point *local_map,
+    const geometry_msgs::msg::Pose &source_pose,
+    double angle_separation);
 
-#endif
+void print_raycast_comparison(
+    const Point *map, int map_N,
+    const DeviceParticle *particle,
+    float *measurements,
+    int num_rays,
+    double angle_sep,
+    int particle_idx);
+
+#endif // MAP_UTILS_H
