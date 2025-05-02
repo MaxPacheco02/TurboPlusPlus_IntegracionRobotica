@@ -56,12 +56,6 @@ __host__ __device__ void Robot::sense(
         }
         
         sensor[i] = dist;
-        
-        #ifndef __CUDA_ARCH__
-        if (i < 5) { // Log first few measurements for debugging
-            std::cout << "Sensor " << i << ": distance = " << dist << std::endl;
-        }
-        #endif
     }
 }
 
