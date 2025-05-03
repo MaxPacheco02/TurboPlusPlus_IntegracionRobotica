@@ -8,13 +8,14 @@ Panels:
         - /Status1
         - /TF1/Frames1
         - /TF1/Tree1
-        - /Odometry1
         - /Odometry1/Shape1
         - /Odometry2
         - /Odometry2/Shape1
         - /Odometry2/Covariance1
         - /Odometry2/Covariance1/Position1
         - /Odometry2/Covariance1/Orientation1
+        - /Odometry3
+        - /Odometry3/Shape1
       Splitter Ratio: 0.4899713397026062
     Tree Height: 762
   - Class: rviz_common/Selection
@@ -34,7 +35,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -364,6 +365,45 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /mcl/odom
       Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: true
+      Keep: 1
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 87; 227; 137
+        Head Length: 0.05000000074505806
+        Head Radius: 0.03999999910593033
+        Shaft Length: 0.20000000298023224
+        Shaft Radius: 0.019999999552965164
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -419,7 +459,7 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 215.18136596679688
+      Scale: 332.6207275390625
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
       X: -0.25604796409606934

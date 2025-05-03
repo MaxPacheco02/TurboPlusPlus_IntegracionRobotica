@@ -102,11 +102,6 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
     checkCuda(cudaMallocManaged(&z_, local_map_N_ * sizeof(double)));
     checkCuda(cudaMallocManaged(&local_map_tmp_, local_map_size_));
 
-    std::cout << "Initializing particles around pose: "
-              << "x=" << pose_.position.x
-              << ", y=" << pose_.position.y
-              << ", yaw=" << tf2::getYaw(pose_.orientation) << std::endl;
-
     // Improved initialization strategy: multi-modal distribution
     const double init_pos_var = 0.1;    // 10cm variance in position
     const double init_angle_var = 0.05; // ~2.8 degrees variance in orientation
@@ -182,15 +177,6 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
         r.set_noise(0.02, 0.05, 0.02);
         particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
     }
-
-    // Print first few particles for debugging
-    std::cout << "Initial particle distribution (first 5):" << std::endl;
-    for (int i = 0; i < 5; i++)
-    {
-        std::cout << "Particle " << i << ": x=" << particles_[i].r.get_x()
-                  << ", y=" << particles_[i].r.get_y()
-                  << ", theta=" << particles_[i].r.get_theta() << std::endl;
-    }
 }
 
 void MCLNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -214,6 +200,11 @@ void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
     grid_map_ = *msg;
     int max_map_size = msg->data.size() / 10;
     map_size_ = max_map_size * sizeof(Point);
+
+    if (max_map_size > max_map_N_){
+        RCLCPP_ERROR(get_logger(), "Imported map is too big. Either adjust the map resolution or this node's limits.");
+        return;
+    }
 
     if (map_ != nullptr)
     {
@@ -253,15 +244,6 @@ void MCLNode::calcControl()
         yaw_last -= 2 * M_PI;
     while (yaw_last < -M_PI)
         yaw_last += 2 * M_PI;
-
-    // Debug output
-    std::cout << "\nControl update details:" << std::endl;
-    std::cout << "Current pose: x=" << pose_.position.x
-              << ", y=" << pose_.position.y
-              << ", yaw=" << yaw << std::endl;
-    std::cout << "Last pose: x=" << last_pose_.position.x
-              << ", y=" << last_pose_.position.y
-              << ", yaw=" << yaw_last << std::endl;
 
     // Calculate turn in the correct direction
     control_.turn = yaw - yaw_last;
@@ -308,10 +290,6 @@ void MCLNode::calcControl()
         control_.forward = 0.0;
     }
 
-    // Debug deltas
-    std::cout << "Delta: dx=" << dx << ", dy=" << dy
-              << ", dyaw=" << control_.turn << std::endl;
-
     // Adjust thresholds for minimum movement
     const double min_move = 0.001; // 1mm
     const double min_turn = 0.005; // ~0.3 degrees
@@ -321,27 +299,16 @@ void MCLNode::calcControl()
         control_.forward = 0.0;
         control_.turn = 0.0;
     }
-
-    std::cout << "Control: forward=" << control_.forward
-              << ", turn=" << control_.turn << std::endl;
 }
 
 void MCLNode::update()
 {
+    RCLCPP_ERROR(get_logger(), "map lenth: %d", map_N_);
     if (map_ == nullptr || map_N_ == 0)
     {
-        std::cout << "Skipping update: Map not loaded yet" << std::endl;
+        RCLCPP_WARN(get_logger(), "Skipping update: Map not loaded yet.");
         return;
     }
-
-    // Debug pose info
-    std::cout << "\n---- MCL Update ----" << std::endl;
-    std::cout << "Current pose: x=" << pose_.position.x
-              << ", y=" << pose_.position.y
-              << ", yaw=" << tf2::getYaw(pose_.orientation) << std::endl;
-    std::cout << "Last pose: x=" << last_pose_.position.x
-              << ", y=" << last_pose_.position.y
-              << ", yaw=" << tf2::getYaw(last_pose_.orientation) << std::endl;
 
     // Compute raycast from current position for visualization
     compute_raycast(map_, map_N_, local_map_, pose_, pc_ang_sep_);
@@ -360,7 +327,7 @@ void MCLNode::update()
         // Still update occasionally even with no motion to maintain visualization
         if (skip_counter % 5 != 0)
         {
-            std::cout << "Skipping update: No significant motion detected" << std::endl;
+            RCLCPP_WARN(get_logger(), "Skipping update: No significant motion detected.");
 
             // Still publish visualizations
             auto now = this->get_clock()->now();
@@ -418,16 +385,6 @@ geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const
     double weighted_cos = 0.0;
     double weighted_sin = 0.0;
 
-    // Debug sample of initial particles
-    std::cout << "\nParticle sample (first 5 before mean calculation):" << std::endl;
-    for (int i = 0; i < std::min(5, particles_N_); i++)
-    {
-        std::cout << "Particle " << i << ": x=" << particles_[i].r.get_x()
-                  << ", y=" << particles_[i].r.get_y()
-                  << ", theta=" << particles_[i].r.get_theta()
-                  << ", w=" << particles_[i].w << std::endl;
-    }
-
     // First pass: calculate weighted means
     for (int i = 0; i < particles_N_; i++)
     {
@@ -446,7 +403,7 @@ geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const
     // Handle degenerate case
     if (sum_weights <= 1e-10)
     {
-        std::cout << "Warning: Degenerate particle weights detected!" << std::endl;
+        RCLCPP_WARN(get_logger(), "Warning: Degenerate particle weights detected!");
         sum_weights = 1.0;
         weighted_x = particles_[0].r.get_x();
         weighted_y = particles_[0].r.get_y();
@@ -462,11 +419,6 @@ geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const
     const double mean_cos = weighted_cos / sum_weights;
     const double mean_sin = weighted_sin / sum_weights;
     const double mean_theta = std::atan2(mean_sin, mean_cos);
-
-    std::cout << "Calculated mean pose: x=" << mean_x
-              << ", y=" << mean_y
-              << ", theta=" << mean_theta
-              << ", sum_weights=" << sum_weights << std::endl;
 
     // Set mean pose
     pose_with_cov.pose.position.x = mean_x;

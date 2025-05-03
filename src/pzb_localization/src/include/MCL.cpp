@@ -48,27 +48,7 @@ void MCL::resample(particle *new_belief)
     std::cout << "Weight variance: " << sum_squared_weights - (sum_weights * sum_weights / num_particles_) << std::endl;
     std::cout << "Effective sample size: " << neff << " (" << (neff / num_particles_ * 100) << "%)" << std::endl;
 
-    // Sample positions for first 5 particles before resampling
-    std::cout << "\nBefore resampling (first 5 particles):" << std::endl;
-    for (int i = 0; i < std::min(5, num_particles_); i++)
-    {
-        std::cout << "Particle " << i << ": x=" << particles_[i].r.get_x()
-                  << ", y=" << particles_[i].r.get_y()
-                  << ", theta=" << particles_[i].r.get_theta()
-                  << ", w=" << particles_[i].w << std::endl;
-    }
-
     resampleParticles(new_belief);
-
-    // Sample positions after resampling
-    std::cout << "\nAfter resampling (first 5 particles):" << std::endl;
-    for (int i = 0; i < std::min(5, num_particles_); i++)
-    {
-        std::cout << "Particle " << i << ": x=" << new_belief[i].r.get_x()
-                  << ", y=" << new_belief[i].r.get_y()
-                  << ", theta=" << new_belief[i].r.get_theta()
-                  << ", w=" << new_belief[i].w << std::endl;
-    }
 }
 
 void MCL::motionUpdate()
@@ -78,22 +58,8 @@ void MCL::motionUpdate()
 
 void MCL::sensorUpdate()
 {
-    // Debug prints
-    std::cout << "\nSensor measurements (first 5):" << std::endl;
-    for (int i = 0; i < std::min(5, num_measurements_); i++)
-    {
-        std::cout << "Z[" << i << "] = " << measurements_[i] << std::endl;
-    }
-
     particlesSensing(particles_, num_particles_, measurements_,
                      num_measurements_, map_, num_map_points_, angle_sep_);
-
-    // Debug weights after sensing
-    std::cout << "\nParticle weights after sensing (first 5):" << std::endl;
-    for (int i = 0; i < std::min(5, num_particles_); i++)
-    {
-        std::cout << "w[" << i << "] = " << particles_[i].w << std::endl;
-    }
 }
 
 void MCL::normalizeWeights()
@@ -148,18 +114,6 @@ void MCL::normalizeWeights()
     }
     weight_variance /= num_particles_;
 
-    // Debug output
-    std::cout << "\nWeight normalization statistics:" << std::endl;
-    std::cout << "Before normalization:" << std::endl;
-    std::cout << "  Min weight: " << min_weight << std::endl;
-    std::cout << "  Max weight: " << max_weight_ << std::endl;
-    std::cout << "  Sum: " << sum << std::endl;
-    std::cout << "  Effective sample size: " << neff_before << std::endl;
-
-    std::cout << "After normalization:" << std::endl;
-    std::cout << "  Weight variance: " << weight_variance << std::endl;
-    std::cout << "  Effective sample size: " << neff_after << std::endl;
-
     // Check for degenerate cases
     if (neff_after < num_particles_ * 0.1)
     {
@@ -197,24 +151,26 @@ void MCL::resampleParticles(particle *new_belief)
     // Calculate cluster statistics to detect convergence
     double mean_x = 0.0, mean_y = 0.0;
     double variance_x = 0.0, variance_y = 0.0;
-    
+
     // First pass: calculate means
-    for (int i = 0; i < num_particles_; i++) {
+    for (int i = 0; i < num_particles_; i++)
+    {
         mean_x += particles_[i].r.get_x() * particles_[i].w;
         mean_y += particles_[i].r.get_y() * particles_[i].w;
     }
-    
+
     // Second pass: calculate variances
-    for (int i = 0; i < num_particles_; i++) {
+    for (int i = 0; i < num_particles_; i++)
+    {
         variance_x += pow(particles_[i].r.get_x() - mean_x, 2) * particles_[i].w;
         variance_y += pow(particles_[i].r.get_y() - mean_y, 2) * particles_[i].w;
     }
-    
+
     // Check if particles are well-clustered (converged)
     double position_variance = variance_x + variance_y;
-    bool is_converged = position_variance < 0.1;  // 10cm threshold
-    
-    std::cout << "Position variance: " << position_variance 
+    bool is_converged = position_variance < 0.1; // 10cm threshold
+
+    std::cout << "Position variance: " << position_variance
               << " Converged: " << (is_converged ? "Yes" : "No") << std::endl;
 
     if (needs_resampling)

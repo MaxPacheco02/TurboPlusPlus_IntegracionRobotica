@@ -10,6 +10,10 @@
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/nvcc_mpc_x5.gif" width="800" height="569"/>
 </div>
 
+<div align="center">
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/swarm.gif" width="800" height="398"/>
+</div>
+
 
 <div style="clear:both; margin-bottom:340px;"></div>
 
@@ -99,6 +103,15 @@ ros2 launch pzb_description rviz_launch.py
 
 # Terminal 4
 ros2 run pzb_control pzb_teleop_low_level_node.py
+```
+
+### Controlling 3 robots at once!
+```Shell
+# Terminal 1
+rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/multiple.rviz
+
+# Terminal 2
+ros2 launch pzb_swarm multi_robot_launch.py
 ```
 
 ## Team members:

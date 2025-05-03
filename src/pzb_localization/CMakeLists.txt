@@ -99,9 +99,13 @@ target_link_libraries(mcl_node
   CUDA::cudart
 )
 
+add_executable(dead_reckoning src/dead_reckoning.cpp)
+ament_target_dependencies(dead_reckoning ${DEPENDENCIES})
+
 # Install targets
 install(TARGETS
   mcl_node
+  dead_reckoning
   DESTINATION lib/${PROJECT_NAME}
 )
 

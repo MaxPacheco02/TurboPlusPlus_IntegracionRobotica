@@ -218,30 +218,12 @@ void print_raycast_comparison(
     Point* local_map = new Point[num_rays];
     compute_raycast(map, map_N, local_map, pose, angle_sep);
 
-    // Compare with device raycast
-    std::cout << "\nRaycast comparison for particle " << particle_idx << ":" << std::endl;
-    std::cout << "Particle pose: x=" << particle->x 
-              << ", y=" << particle->y 
-              << ", theta=" << particle->theta << std::endl;
-
     // Calculate distances for host raycast
     std::vector<float> host_distances(num_rays);
     for (int i = 0; i < num_rays; i++) {
         float dx = local_map[i].x - particle->x;
         float dy = local_map[i].y - particle->y;
         host_distances[i] = sqrt(dx * dx + dy * dy);
-    }
-
-    // Print first 10 measurements
-    std::cout << "First 10 rays:" << std::endl;
-    std::cout << "Ray\tHost\tDevice\tDiff" << std::endl;
-    for (int i = 0; i < std::min(10, num_rays); i++) {
-        float device_dist = measurements[particle_idx * num_rays + i];
-        float diff = fabs(host_distances[i] - device_dist);
-        std::cout << i << "\t" 
-                  << host_distances[i] << "\t" 
-                  << device_dist << "\t"
-                  << diff << std::endl;
     }
 
     delete[] local_map;

@@ -63,6 +63,7 @@ private:
     // Map data
     size_t map_size_;
     int map_N_;
+    int max_map_N_{5000};
     Point* map_;
 
     // Local map data

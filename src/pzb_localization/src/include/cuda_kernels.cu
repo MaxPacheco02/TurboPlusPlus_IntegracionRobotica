@@ -383,11 +383,6 @@ extern "C"
         Point* map, int map_N,
         double ang_sep)
     {
-        // Print actual measurements for debugging
-        std::cout << "\nActual measurements (first 5):" << std::endl;
-        for (int i = 0; i < std::min(5, Z_N); i++) {
-            std::cout << "Z[" << i << "] = " << Z[i] << std::endl;
-        }
     
         // Allocate device memory
         float* d_measurements;
@@ -449,17 +444,12 @@ extern "C"
             X[i].w = h_particles[i].weight;
         }
     
-        // Print some debug info
-        std::cout << "\nWeight distribution after update:" << std::endl;
         float min_w = 1.0f, max_w = 0.0f, sum_w = 0.0f;
         for (int i = 0; i < X_N; i++) {
             min_w = fmin(min_w, X[i].w);
             max_w = fmax(max_w, X[i].w);
             sum_w += X[i].w;
         }
-        std::cout << "Min weight: " << min_w << std::endl;
-        std::cout << "Max weight: " << max_w << std::endl;
-        std::cout << "Average weight: " << sum_w/X_N << std::endl;
     
         // Cleanup
         delete[] h_actual_measurements;
