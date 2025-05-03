@@ -114,6 +114,18 @@ rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/multiple.r
 ros2 launch pzb_swarm multi_robot_launch.py
 ```
 
+### Run Localization with CUDA
+```Shell
+# Terminals 1-4
+# Run the GZ SIM Teleoperating Instructions
+
+# Terminal 5 
+ros2 run pzb_localization mcl_node
+
+# Terminal 6 
+ros2 launch pzb_localization map_launch.py
+```
+
 ## Team members:
 ### *Andrés Carrizales - A00832679*
 ### *Daniel Castañon - A01284991*

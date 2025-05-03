@@ -13,7 +13,10 @@
 #include "map_utils.h"
 #include "robot_utils.h"
 
-class MCLNode : public rclcpp::Node {
+#include "sensor_msgs/msg/laser_scan.hpp"
+
+class MCLNode : public rclcpp::Node
+{
 public:
     MCLNode();
     ~MCLNode();
@@ -23,16 +26,41 @@ private:
     void initializePublishersAndSubscribers();
     void initializeMessages();
     void initializeMCLComponents(double init_x, double init_y, double init_theta);
+    void initializeEmptyMap();
+    void updateCell(int x, int y, int value);
+    bool worldToGrid(double wx, double wy, int &gx, int &gy);
+    void gridToWorld(int gx, int gy, double &wx, double &wy);
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void estimateCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
     void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void calcControl();
     void update();
+    void publish_msgs();
+
+    void initializeMap();
+    void laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+    void updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+    void updateGridCell(double robot_x, double robot_y, double point_x, double point_y);
+    void updatePointCloudMap(const std::vector<Point>& new_points);
+
+    void expandMapIfNeeded(
+        nav_msgs::msg::OccupancyGrid &map_msg,
+        const geometry_msgs::msg::Pose &robot_pose,
+        double expansion_margin = 2.0);
+
+    void updateMapFromRaycast(
+        nav_msgs::msg::OccupancyGrid &map_msg,
+        const geometry_msgs::msg::Pose &robot_pose,
+        const Point *ray_endpoints,
+        int num_rays,
+        double max_range = 10.0);
+
     geometry_msgs::msg::PoseWithCovariance calculateMeanPose() const;
 
     // Node components
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pc_pub_, local_map_pc_pub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr mcl_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_estimate_sub_;
@@ -40,6 +68,7 @@ private:
 
     // Messages
     nav_msgs::msg::OccupancyGrid grid_map_;
+    nav_msgs::msg::OccupancyGrid map_msg_;
     nav_msgs::msg::Odometry mcl_msg_;
     sensor_msgs::msg::PointCloud2 map_pc_msg_, local_map_pc_msg_;
 
@@ -54,22 +83,27 @@ private:
     int update_rate_;
 
     // CUDA memory
-    particle* particles_;
-    particle* belief_;
-    double* z_;
-    Point* local_map_tmp_;
+    particle *particles_;
+    particle *belief_;
+    double *z_;
+    Point *local_map_tmp_;
     size_t particles_size_;
 
     // Map data
     size_t map_size_;
     int map_N_;
-    int max_map_N_{5000};
-    Point* map_;
+    int max_map_N_{50000};
+    Point *map_;
 
     // Local map data
     size_t local_map_size_;
     int local_map_N_;
-    Point* local_map_;
+    Point *local_map_;
+
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub_;
+    std::vector<double> filtered_ranges_;
+    double laser_min_angle_;
+    double laser_angle_increment_;
 };
 
 #endif // MCL_NODE_H

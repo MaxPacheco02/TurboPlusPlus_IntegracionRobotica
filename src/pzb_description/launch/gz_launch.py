@@ -27,6 +27,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
 
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_pzb_description = get_package_share_directory('pzb_description')
@@ -67,9 +68,12 @@ def generate_launch_description():
     gz_joint_broadcaster = Node(
         package="pzb_description",
         executable="gz_joint_broadcaster",
+        namespace=LaunchConfiguration('ns_'),
     )
 
     return LaunchDescription([
+        ns_arg,
+
         gz_sim,
         bridge,
         gz_joint_broadcaster,

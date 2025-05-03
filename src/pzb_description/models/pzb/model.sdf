@@ -52,7 +52,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       <sensor name='gpu_lidar' type='gpu_lidar'>
         <pose>0 0 0 0 0 0</pose>
         <topic>lidar</topic>
-        <gz_frame_id>base_link</gz_frame_id>
+        <gz_frame_id>pzb/base_axis</gz_frame_id>
         <update_rate>10</update_rate>
         <lidar>
           <scan>

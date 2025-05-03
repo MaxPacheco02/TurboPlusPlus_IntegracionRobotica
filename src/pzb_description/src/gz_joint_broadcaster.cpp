@@ -40,6 +40,7 @@ public:
     GzJointBroadcaster() : Node("gz_joint_broadcaster")
     {
         using namespace std::placeholders;
+        ns_ = this->get_namespace();
 
         gz_joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
             "/gz/joints", 10,
@@ -48,7 +49,7 @@ public:
               joint_state_msg.position[1] = -std::round(msg.position[0] * 1000.0) / 1000.0;
             });
 
-        joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+        joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
 
         updateTimer =
             this->create_wall_timer(10ms, std::bind(&GzJointBroadcaster::update, this));
@@ -73,6 +74,8 @@ private:
     rclcpp::TimerBase::SharedPtr updateTimer;
 
     sensor_msgs::msg::JointState joint_state_msg;
+
+    std::string ns_;
 
     double theta_l{0.0}, theta_r{0.0}, theta_lidar{0.0};
     double dt{0.01};
