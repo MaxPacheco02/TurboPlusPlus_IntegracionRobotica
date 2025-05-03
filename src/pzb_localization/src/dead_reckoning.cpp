@@ -40,22 +40,23 @@ public:
     DeadReckoingNode() : Node("dead_reckoning")
     {
         using namespace std::placeholders;
+        ns_ = this->get_namespace();
 
         l_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-            "/w_l", 10,
+            "w_l", 10,
             [this](const std_msgs::msg::Float32 &msg){
                 w1 = msg.data;
                 update_xid_params_ws();
             });
 
         r_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-            "/w_r", 10,
+            "w_r", 10,
             [this](const std_msgs::msg::Float32 &msg){
                 w2 = msg.data;
                 update_xid_params_ws();
             });
 
-        odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
+        odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
         update_timer_ =
             this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
@@ -78,6 +79,8 @@ private:
 
     tf2::Quaternion quat;
 
+    std::string ns_;
+
     double w1{0.0}, w2{0.0};
     double twist_x{0.0}, twist_z{0.0};
 
@@ -86,7 +89,7 @@ private:
     Eigen::Vector3f xi, xi_dot;
 
     void update() {      
-        RCLCPP_ERROR(get_logger(), "%f,%f,%f - %f, %f", xi(0),xi(1),xi(2), twist_x, twist_z);
+        // RCLCPP_ERROR(get_logger(), "%f,%f,%f - %f, %f", xi(0),xi(1),xi(2), twist_x, twist_z);
 
         xi_dot << 
             twist_x* cos(xi(2)),
@@ -118,7 +121,6 @@ private:
         twist_x = (r/2) * (w1 + w2);
         twist_z = (r/(2*l)) * (w2 - w1);
     }
-
 };
 
 int main(int argc, char **argv)
