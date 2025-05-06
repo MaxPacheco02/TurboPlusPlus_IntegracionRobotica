@@ -15,8 +15,9 @@ Panels:
         - /Odometry2/Covariance1
         - /Odometry2/Covariance1/Position1
         - /Odometry2/Covariance1/Orientation1
-        - /Odometry3
         - /Odometry3/Shape1
+        - /Odometry3/Covariance1
+        - /Odometry3/Covariance1/Position1
       Splitter Ratio: 0.4899713397026062
     Tree Height: 762
   - Class: rviz_common/Selection
@@ -36,7 +37,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: LaserScan
+    SyncSource: PointCloud2
 Visualization Manager:
   Class: ""
   Displays:
@@ -474,11 +475,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 595.6375732421875
+      Scale: 165.257568359375
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 0
-      Y: 0
+      X: 0.8197293877601624
+      Y: 0.21966804563999176
     Saved: ~
 Window Geometry:
   Displays:

@@ -145,8 +145,8 @@ void MCL::resampleParticles(particle *new_belief)
 
     double neff = 1.0 / sum_squared_weights;
     // More conservative resampling threshold
-    const double resample_threshold = num_particles_ * 0.01; // The lower, the higher possibility it will resample. Resampling is good, but costly.
-    bool needs_resampling = (neff > resample_threshold);
+    const double resample_threshold = num_particles_ * 0.5; // The lower, the higher possibility it will resample. Resampling is good, but costly.
+    bool needs_resampling = (neff < resample_threshold);
 
     // Calculate cluster statistics to detect convergence
     double mean_x = 0.0, mean_y = 0.0;
@@ -168,7 +168,7 @@ void MCL::resampleParticles(particle *new_belief)
 
     // Check if particles are well-clustered (converged)
     double position_variance = variance_x + variance_y;
-    bool is_converged = position_variance < 0.1; // 10cm threshold
+    bool is_converged = position_variance < 0.01; // 10cm threshold
 
     std::cout << "Position variance: " << position_variance
               << " Converged: " << (is_converged ? "Yes" : "No") << std::endl;
