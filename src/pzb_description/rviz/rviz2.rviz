@@ -11,14 +11,12 @@ Panels:
         - /Odometry1/Shape1
         - /LaserScan1
         - /RobotModel1
-        - /Odometry2
         - /Odometry2/Shape1
         - /Odometry2/Covariance1
         - /Odometry2/Covariance1/Position1
         - /Odometry2/Covariance1/Orientation1
         - /Odometry3
         - /Odometry3/Shape1
-        - /Map2/Status1
       Splitter Ratio: 0.4899713397026062
     Tree Height: 762
   - Class: rviz_common/Selection
@@ -38,7 +36,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: LaserScan
 Visualization Manager:
   Class: ""
   Displays:
@@ -60,13 +58,6 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz_default_plugins/Axes
-      Enabled: false
-      Length: 0.30000001192092896
-      Name: Axes
-      Radius: 0.009999999776482582
-      Reference Frame: base_footprint
-      Value: false
     - Class: rviz_default_plugins/TF
       Enabled: false
       Frame Timeout: 15
@@ -396,8 +387,8 @@ Visualization Manager:
         Color: 87; 227; 137
         Head Length: 0.05000000074505806
         Head Radius: 0.03999999910593033
-        Shaft Length: 0.20000000298023224
-        Shaft Radius: 0.019999999552965164
+        Shaft Length: 0.15000000596046448
+        Shaft Radius: 0.029999999329447746
         Value: Arrow
       Topic:
         Depth: 5
@@ -405,7 +396,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /odom
+        Value: /gz/odom
       Value: true
     - Alpha: 0.699999988079071
       Class: rviz_default_plugins/Map
@@ -458,7 +449,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /goal_pose
+        Value: /pzb/goal_pose
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:
@@ -483,7 +474,7 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 155.01730346679688
+      Scale: 595.6375732421875
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0

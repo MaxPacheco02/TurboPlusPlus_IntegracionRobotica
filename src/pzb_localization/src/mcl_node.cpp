@@ -35,13 +35,13 @@ MCLNode::~MCLNode()
 void MCLNode::initializeMap()
 {
     // Initialize empty map with default size
-    map_msg_.info.resolution = 0.05; // 5cm per cell
-    map_msg_.info.width = 400;       // 20 meters
-    map_msg_.info.height = 400;      // 20 meters
+    map_msg_.info.resolution = 0.05; // cm per cell
+    map_msg_.info.width = 10 / map_msg_.info.resolution;       // 10 meters
+    map_msg_.info.height = 10 / map_msg_.info.resolution;      // 10 meters
 
     // Center the map at robot's initial position
-    map_msg_.info.origin.position.x = -10.0; // -10m to +10m range
-    map_msg_.info.origin.position.y = -10.0;
+    map_msg_.info.origin.position.x = -5.0; // -5m to +5m range
+    map_msg_.info.origin.position.y = -5.0;
     map_msg_.info.origin.position.z = 0.0;
 
     // Initialize all cells as unknown (-1)
@@ -63,7 +63,7 @@ void MCLNode::initializeMap()
 void MCLNode::initializeParameters()
 {
     particles_N_ = 500;
-    pc_ang_sep_ = 9.0; // Reduced from 9.0 for better angular resolution
+    pc_ang_sep_ = 36.0; // Reduced from 9.0 for better angular resolution
     update_rate_ = 50; // Hz
 }
 

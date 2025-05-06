@@ -54,10 +54,11 @@ def generate_launch_description():
                    '/lidar@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
                    '/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
                    '/pzb_gz_drive@geometry_msgs/msg/Twist@gz.msgs.Twist',  
-                   '/gz_joints@sensor_msgs/msg/JointState@gz.msgs.Model',
+                   '/gz/joints@sensor_msgs/msg/JointState@gz.msgs.Model',
                    ],
         remappings=[
-            ('/pzb_gz_drive', '/cmd_vel'),
+            # ('/pzb_gz_drive', '/pzb/cmd_vel'),
+            # ('/pzb/odom', '/gz/odom'),
         ],
         # parameters=[{
         #     'qos_overrides./model/my_roboboat.subscriber.reliability': 'reliable',
@@ -65,9 +66,9 @@ def generate_launch_description():
         output='screen',
     )
 
-    gz_joint_broadcaster = Node(
+    gz_translator = Node(
         package="pzb_description",
-        executable="gz_joint_broadcaster",
+        executable="gz_translator",
         namespace=LaunchConfiguration('ns_'),
     )
 
@@ -76,5 +77,5 @@ def generate_launch_description():
 
         gz_sim,
         bridge,
-        gz_joint_broadcaster,
+        gz_translator,
     ])

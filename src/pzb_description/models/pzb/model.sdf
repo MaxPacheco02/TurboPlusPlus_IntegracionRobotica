@@ -70,8 +70,8 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
             </vertical>
           </scan>
           <range>
-            <min>0.2</min>
-            <max>20.0</max>
+            <min>0.15</min>
+            <max>10.0</max>
             <resolution>0.01</resolution>
           </range>
         </lidar>
@@ -241,6 +241,8 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       name="gz::sim::systems::DiffDrive">
       <left_joint>right_wheel_joint</left_joint>
       <right_joint>left_wheel_joint</right_joint>
+      <wheel_separation>0.19</wheel_separation>
+      <wheel_radius>0.08</wheel_radius>
       <topic>/pzb_gz_drive</topic>
     </plugin>
 

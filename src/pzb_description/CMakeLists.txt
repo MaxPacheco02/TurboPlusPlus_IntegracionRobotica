@@ -45,8 +45,8 @@ set(DEPENDENCIES
 add_executable(pzb_tf2_publisher src/pzb_tf2_publisher.cpp)
 ament_target_dependencies(pzb_tf2_publisher ${DEPENDENCIES})
 
-add_executable(gz_joint_broadcaster src/gz_joint_broadcaster.cpp)
-ament_target_dependencies(gz_joint_broadcaster ${DEPENDENCIES})
+add_executable(gz_translator src/gz_translator.cpp)
+ament_target_dependencies(gz_translator ${DEPENDENCIES})
 
 # Install Python executables
 install(PROGRAMS
@@ -56,7 +56,7 @@ DESTINATION lib/${PROJECT_NAME}
 
 install(TARGETS
   pzb_tf2_publisher
-  gz_joint_broadcaster
+  gz_translator
   DESTINATION lib/${PROJECT_NAME}
 )
 
