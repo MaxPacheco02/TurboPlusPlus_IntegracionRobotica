@@ -5,8 +5,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-set(cvplot_DIR "src/cvplot/build/")
-
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(urdf REQUIRED)
@@ -26,7 +24,6 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(pzb_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(cvplot REQUIRED)
 
 # CUDA config
 find_package(CUDAToolkit REQUIRED)
@@ -55,9 +52,6 @@ set(DEPENDENCIES
   OpenCV
   cv_bridge
 )
-
-message("cvplot_FOUND: ${cvplot_FOUND}")
-include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
 
 # Get all include directories from dependencies
 foreach(dependency ${DEPENDENCIES})
@@ -95,7 +89,6 @@ set_target_properties(mcl_node PROPERTIES
 # Link dependencies
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
 target_link_libraries(mcl_node 
-  cvplot
   CUDA::cudart
 )
 
