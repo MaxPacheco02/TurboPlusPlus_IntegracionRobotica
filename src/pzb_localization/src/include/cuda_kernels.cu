@@ -182,10 +182,10 @@ __global__ void calculateWeightsKernel(
     if (idx >= N) return;
 
     float total_log_likelihood = 0.0f;
-    const float measurement_var = 0.08f;  // Might need tuning
+    const float measurement_var = 0.1f;  // Might need tuning
     int valid_measurements = 0;
     
-    for (int j = 0; j < num_rays; j += 2) {
+    for (int j = 0; j < num_rays; j ++) {
         const float predicted = measurements[idx * num_rays + j];
         const float actual = actual_measurements[j];
         
@@ -194,7 +194,7 @@ __global__ void calculateWeightsKernel(
             const float squared_diff = diff * diff;
             
             // More aggressive likelihood function
-            float log_likelihood = -squared_diff / (2.0f * measurement_var);
+            float log_likelihood = -squared_diff / (measurement_var);
             total_log_likelihood += log_likelihood;
             valid_measurements++;
         }
@@ -204,7 +204,7 @@ __global__ void calculateWeightsKernel(
     float weight;
     if (valid_measurements > 5) {
         // Convert from log space and apply exponential scaling
-        weight = expf(total_log_likelihood * 5.5f);  // Multiply by 2 to make differences more pronounced
+        weight = expf(total_log_likelihood * 30.0f);  // Multiply to make differences more pronounced
         
         // Ensure reasonable bounds
         const float min_weight = 1e-6f;

@@ -34,12 +34,13 @@
 
 using namespace std::chrono_literals;
 
-class GzJointBroadcaster : public rclcpp::Node
+class GzTranslator : public rclcpp::Node
 {
 public:
-    GzJointBroadcaster() : Node("gz_joint_broadcaster")
+    GzTranslator() : Node("gz_translator")
     {
         using namespace std::placeholders;
+        ns_ = this->get_namespace();
 
         gz_joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
             "/gz/joints", 10,
@@ -48,10 +49,18 @@ public:
               joint_state_msg.position[1] = -std::round(msg.position[0] * 1000.0) / 1000.0;
             });
 
-        joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+        cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "/pzb/cmd_vel", 10,
+            [this](const geometry_msgs::msg::Twist &msg){
+                cmd_vel_msg.linear.x = msg.linear.x * gz_factor;
+                cmd_vel_msg.angular.z = msg.angular.z * gz_factor;
+            });
 
+        joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/pzb_gz_drive", 10);
+        
         updateTimer =
-            this->create_wall_timer(10ms, std::bind(&GzJointBroadcaster::update, this));
+            this->create_wall_timer(10ms, std::bind(&GzTranslator::update, this));
 
         joint_state_msg.header.frame_id = "odom";
 
@@ -67,15 +76,21 @@ public:
 private:
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr gz_joint_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
 
     rclcpp::TimerBase::SharedPtr updateTimer;
 
     sensor_msgs::msg::JointState joint_state_msg;
+    geometry_msgs::msg::Twist cmd_vel_msg;
+
+    std::string ns_;
 
     double theta_l{0.0}, theta_r{0.0}, theta_lidar{0.0};
     double dt{0.01};
+    double gz_factor{1.5};
 
     void update() {      
 
@@ -85,13 +100,14 @@ private:
         joint_state_msg.position[2] = theta_lidar;
 
         joint_state_pub_->publish(joint_state_msg);
+        cmd_vel_pub_->publish(cmd_vel_msg);
     }
 };
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<GzJointBroadcaster>());
+    rclcpp::spin(std::make_shared<GzTranslator>());
     rclcpp::shutdown();
     return 0;
 }

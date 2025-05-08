@@ -5,12 +5,15 @@ using namespace std::chrono_literals;
 
 MCLNode::MCLNode() : Node("mcl_node")
 {
+    // Initialize map-related variables
+    map_ = nullptr;
+    map_N_ = 0;
+
+    // Rest of your initialization code...
     initializeParameters();
     initializePublishersAndSubscribers();
     initializeMessages();
     initializeMCLComponents(0.0, 0.0, 0.0);
-    map_ = nullptr;
-    map_N_ = 0;
 }
 
 MCLNode::~MCLNode()
@@ -29,10 +32,38 @@ MCLNode::~MCLNode()
         cudaFree(local_map_tmp_);
 }
 
+void MCLNode::initializeMap()
+{
+    // Initialize empty map with default size
+    map_msg_.info.resolution = 0.05; // cm per cell
+    map_msg_.info.width = 10 / map_msg_.info.resolution;       // 10 meters
+    map_msg_.info.height = 10 / map_msg_.info.resolution;      // 10 meters
+
+    // Center the map at robot's initial position
+    map_msg_.info.origin.position.x = -5.0; // -5m to +5m range
+    map_msg_.info.origin.position.y = -5.0;
+    map_msg_.info.origin.position.z = 0.0;
+
+    // Initialize all cells as unknown (-1)
+    map_msg_.data.resize(map_msg_.info.width * map_msg_.info.height, -1);
+
+    // Set header frame
+    map_msg_.header.frame_id = "odom";
+
+    // Initialize point cloud map
+    map_size_ = max_map_N_ * sizeof(Point);
+    if (map_ != nullptr)
+    {
+        cudaFree(map_);
+    }
+    checkCuda(cudaMallocManaged(&map_, map_size_));
+    map_N_ = 0;
+}
+
 void MCLNode::initializeParameters()
 {
     particles_N_ = 500;
-    pc_ang_sep_ = 9.0; // Reduced from 9.0 for better angular resolution
+    pc_ang_sep_ = 36.0; // Reduced from 9.0 for better angular resolution
     update_rate_ = 50; // Hz
 }
 
@@ -40,24 +71,29 @@ void MCLNode::initializePublishersAndSubscribers()
 {
     // Create publishers
     map_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-        "/pzb/map_pc", 10);
+        "pzb/map_pc", 10);
     local_map_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-        "/pzb/pc", 10);
+        "pzb/pc", 10);
     mcl_pub_ = create_publisher<nav_msgs::msg::Odometry>(
-        "/mcl/odom", 10);
+        "mcl/odom", 10);
+    map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
 
     // Create subscribers
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-        "/pzb/odom", 10,
+        "pzb/odom", 10,
         std::bind(&MCLNode::odomCallback, this, std::placeholders::_1));
 
     initial_estimate_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-        "/initialpose", 10,
+        "initialpose", 10,
         std::bind(&MCLNode::estimateCallback, this, std::placeholders::_1));
 
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "/pzb/map", 10,
+        "pzb/map", 10,
         std::bind(&MCLNode::mapCallback, this, std::placeholders::_1));
+
+    laser_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
+        "/lidar", 10,
+        std::bind(&MCLNode::laserCallback, this, std::placeholders::_1));
 
     // Create timer
     timer_ = create_wall_timer(
@@ -82,6 +118,82 @@ void MCLNode::initializeMessages()
                             .z(0.0)
                             .w(1.0);
     last_pose_ = pose_;
+}
+
+void MCLNode::laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+{
+    // Initialize map if it hasn't been done yet
+    if (map_ == nullptr || map_N_ == 0)
+    {
+        initializeMap();
+    }
+
+    // Store laser parameters
+    laser_min_angle_ = msg->angle_min;
+    laser_angle_increment_ = msg->angle_increment;
+
+    // Filter ranges according to pc_ang_sep_
+    filtered_ranges_.clear();
+    int skip_rays = static_cast<int>((pc_ang_sep_ * M_PI / 180.0) / msg->angle_increment);
+    skip_rays = std::max(1, skip_rays);
+
+    for (size_t i = 0; i < msg->ranges.size(); i += skip_rays)
+    {
+        if (std::isfinite(msg->ranges[i]) &&
+            msg->ranges[i] >= msg->range_min &&
+            msg->ranges[i] <= msg->range_max)
+        {
+            filtered_ranges_.push_back(msg->ranges[i]);
+        }
+    }
+
+    // Update map and point cloud
+    updateMapFromLaser(msg);
+}
+
+void MCLNode::initializeEmptyMap()
+{
+    // Set basic map properties
+    map_msg_.info.resolution = 0.05; // 5cm per cell
+    map_msg_.info.width = 200;       // 10 meters / 0.05
+    map_msg_.info.height = 200;      // 10 meters / 0.05
+
+    // Set map origin (bottom-left corner)
+    map_msg_.info.origin.position.x = -5.0; // Center map at robot
+    map_msg_.info.origin.position.y = -5.0;
+    map_msg_.info.origin.position.z = 0.0;
+
+    // Initialize all cells as unknown (-1)
+    map_msg_.data.resize(map_msg_.info.width * map_msg_.info.height, -1);
+
+    // Set header frame
+    map_msg_.header.frame_id = "odom";
+}
+
+void MCLNode::updateCell(int x, int y, int value)
+{
+    if (x >= 0 && x < map_msg_.info.width &&
+        y >= 0 && y < map_msg_.info.height)
+    {
+        map_msg_.data[y * map_msg_.info.width + x] = value;
+    }
+}
+
+// Convert world coordinates to grid coordinates
+bool MCLNode::worldToGrid(double wx, double wy, int &gx, int &gy)
+{
+    gx = static_cast<int>((wx - map_msg_.info.origin.position.x) / map_msg_.info.resolution);
+    gy = static_cast<int>((wy - map_msg_.info.origin.position.y) / map_msg_.info.resolution);
+
+    return (gx >= 0 && gx < map_msg_.info.width &&
+            gy >= 0 && gy < map_msg_.info.height);
+}
+
+// Convert grid coordinates to world coordinates
+void MCLNode::gridToWorld(int gx, int gy, double &wx, double &wy)
+{
+    wx = gx * map_msg_.info.resolution + map_msg_.info.origin.position.x;
+    wy = gy * map_msg_.info.resolution + map_msg_.info.origin.position.y;
 }
 
 void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_theta)
@@ -201,8 +313,9 @@ void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
     int max_map_size = msg->data.size() / 10;
     map_size_ = max_map_size * sizeof(Point);
 
-    if (max_map_size > max_map_N_){
-        RCLCPP_ERROR(get_logger(), "Imported map is too big. Either adjust the map resolution or this node's limits.");
+    if (max_map_size > max_map_N_)
+    {
+        RCLCPP_ERROR(get_logger(), "Imported map of size %d is too big.", max_map_size);
         return;
     }
 
@@ -214,6 +327,137 @@ void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
     checkCuda(cudaMallocManaged(&map_, map_size_));
     map_N_ = map2arr(grid_map_, map_, max_map_size);
     fill_pc(map_pc_msg_, map_, map_N_, 0, 0, 255, 255, 0.0);
+}
+
+void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+{
+    // Use current pose for map updates
+    double robot_x = pose_.position.x; // Using pose_ instead of mcl_msg_
+    double robot_y = pose_.position.y;
+    double robot_yaw = tf2::getYaw(pose_.orientation);
+
+    // Temporary storage for new points
+    std::vector<Point> new_points;
+    new_points.reserve(filtered_ranges_.size());
+
+    for (size_t i = 0; i < filtered_ranges_.size(); i++)
+    {
+        // Calculate angle for this ray
+        double angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) + robot_yaw;
+
+        // Calculate point position in world frame
+        double point_x = robot_x + filtered_ranges_[i] * cos(angle);
+        double point_y = robot_y + filtered_ranges_[i] * sin(angle);
+
+        // Add to new points
+        new_points.push_back(Point{point_x, point_y});
+
+        // Update occupancy grid
+        updateGridCell(robot_x, robot_y, point_x, point_y);
+    }
+
+    // Update point cloud map
+    updatePointCloudMap(new_points);
+}
+
+void MCLNode::updateGridCell(double robot_x, double robot_y, double point_x, double point_y)
+{
+    // Convert to grid coordinates
+    int rx = static_cast<int>((robot_x - map_msg_.info.origin.position.x) / map_msg_.info.resolution);
+    int ry = static_cast<int>((robot_y - map_msg_.info.origin.position.y) / map_msg_.info.resolution);
+    int px = static_cast<int>((point_x - map_msg_.info.origin.position.x) / map_msg_.info.resolution);
+    int py = static_cast<int>((point_y - map_msg_.info.origin.position.y) / map_msg_.info.resolution);
+
+    // Use Bresenham's line algorithm to mark free space
+    int dx = abs(px - rx);
+    int dy = abs(py - ry);
+    int sx = rx < px ? 1 : -1;
+    int sy = ry < py ? 1 : -1;
+    int err = dx - dy;
+
+    int x = rx;
+    int y = ry;
+
+    while (true)
+    {
+        if (x >= 0 && x < map_msg_.info.width && y >= 0 && y < map_msg_.info.height)
+        {
+            int idx = y * map_msg_.info.width + x;
+
+            // If this is the endpoint
+            if (x == px && y == py)
+            {
+                // Update occupied cell with running average
+                if (map_msg_.data[idx] == -1)
+                {
+                    map_msg_.data[idx] = 100; // First observation
+                }
+                else
+                {
+                    map_msg_.data[idx] = (map_msg_.data[idx] + 100) / 2;
+                }
+            }
+            else
+            {
+                // Update free space with running average
+                if (map_msg_.data[idx] == -1)
+                {
+                    map_msg_.data[idx] = 0; // First observation
+                }
+                else
+                {
+                    map_msg_.data[idx] = map_msg_.data[idx] / 2; // Tend towards free
+                }
+            }
+        }
+
+        if (x == px && y == py)
+            break;
+
+        int e2 = 2 * err;
+        if (e2 > -dy)
+        {
+            err -= dy;
+            x += sx;
+        }
+        if (e2 < dx)
+        {
+            err += dx;
+            y += sy;
+        }
+    }
+}
+
+void MCLNode::updatePointCloudMap(const std::vector<Point> &new_points)
+{
+    // Add new points to map
+    for (const auto &point : new_points)
+    {
+        // Optional: Check for duplicates or close points
+        bool is_new = true;
+        for (int i = 0; i < map_N_; i++)
+        {
+            double dx = map_[i].x - point.x;
+            double dy = map_[i].y - point.y;
+            if (dx * dx + dy * dy < 0.01)
+            { // 10cm threshold
+                is_new = false;
+                break;
+            }
+        }
+
+        if (is_new && map_N_ < max_map_N_)
+        {
+            map_[map_N_] = point;
+            map_N_++;
+
+            if (map_N_ >= max_map_N_)
+            {
+                RCLCPP_WARN(get_logger(), "Map reached maximum size (%d points)", max_map_N_);
+                break;
+            }
+        }
+    }
 }
 
 double normalize_angle(double angle)
@@ -301,9 +545,25 @@ void MCLNode::calcControl()
     }
 }
 
+void MCLNode::publish_msgs()
+{
+    auto now = this->get_clock()->now();
+    map_pc_msg_.header.stamp = now;
+    local_map_pc_msg_.header.stamp = now;
+    mcl_msg_.header.stamp = now;
+    map_msg_.header.stamp = now;
+
+    map_pc_pub_->publish(map_pc_msg_);
+    local_map_pc_pub_->publish(local_map_pc_msg_);
+    mcl_pub_->publish(mcl_msg_);
+    map_pub_->publish(map_msg_);
+}
+
 void MCLNode::update()
 {
-    RCLCPP_ERROR(get_logger(), "map lenth: %d", map_N_);
+    publish_msgs();
+
+    RCLCPP_ERROR(get_logger(), "map length: %d", map_N_);
     if (map_ == nullptr || map_N_ == 0)
     {
         RCLCPP_WARN(get_logger(), "Skipping update: Map not loaded yet.");
@@ -330,14 +590,7 @@ void MCLNode::update()
             RCLCPP_WARN(get_logger(), "Skipping update: No significant motion detected.");
 
             // Still publish visualizations
-            auto now = this->get_clock()->now();
-            map_pc_msg_.header.stamp = now;
-            local_map_pc_msg_.header.stamp = now;
-            mcl_msg_.header.stamp = now;
-            map_pc_pub_->publish(map_pc_msg_);
-            local_map_pc_pub_->publish(local_map_pc_msg_);
-            mcl_pub_->publish(mcl_msg_);
-
+            publish_msgs();
             return;
         }
     }
@@ -361,14 +614,7 @@ void MCLNode::update()
     last_pose_ = pose_;
 
     // Publish results
-    auto now = this->get_clock()->now();
-    map_pc_msg_.header.stamp = now;
-    local_map_pc_msg_.header.stamp = now;
-    mcl_msg_.header.stamp = now;
-
-    map_pc_pub_->publish(map_pc_msg_);
-    local_map_pc_pub_->publish(local_map_pc_msg_);
-    mcl_pub_->publish(mcl_msg_);
+    publish_msgs();
 }
 
 geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const
@@ -464,6 +710,153 @@ geometry_msgs::msg::PoseWithCovariance MCLNode::calculateMeanPose() const
 
     std::copy(cov.begin(), cov.end(), pose_with_cov.covariance.begin());
     return pose_with_cov;
+}
+
+void MCLNode::updateMapFromRaycast(
+    nav_msgs::msg::OccupancyGrid &map_msg,
+    const geometry_msgs::msg::Pose &robot_pose,
+    const Point *ray_endpoints,
+    int num_rays,
+    double max_range) // Maximum sensor range
+{
+    // Bresenham's line algorithm for ray tracing
+    auto plotLine = [&map_msg](int x0, int y0, int x1, int y1, int8_t value)
+    {
+        int dx = abs(x1 - x0);
+        int dy = abs(y1 - y0);
+        int x = x0;
+        int y = y0;
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+
+        while (true)
+        {
+            // Check bounds
+            if (x >= 0 && x < map_msg.info.width &&
+                y >= 0 && y < map_msg.info.height)
+            {
+                // Only update if cell is unknown or has lower confidence
+                int idx = y * map_msg.info.width + x;
+                if (map_msg.data[idx] == -1 ||
+                    (value == 0 && map_msg.data[idx] > 0 && map_msg.data[idx] < 90) ||
+                    (value == 100 && map_msg.data[idx] < 10))
+                {
+                    map_msg.data[idx] = value;
+                }
+            }
+
+            if (x == x1 && y == y1)
+                break;
+            int e2 = 2 * err;
+            if (e2 > -dy)
+            {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx)
+            {
+                err += dx;
+                y += sy;
+            }
+        }
+    };
+
+    // Get robot position in grid coordinates
+    int robot_x = static_cast<int>((robot_pose.position.x - map_msg.info.origin.position.x) / map_msg.info.resolution);
+    int robot_y = static_cast<int>((robot_pose.position.y - map_msg.info.origin.position.y) / map_msg.info.resolution);
+
+    // Process each ray
+    for (int i = 0; i < num_rays; i++)
+    {
+        // Convert endpoint to grid coordinates
+        int end_x = static_cast<int>((ray_endpoints[i].x - map_msg.info.origin.position.x) / map_msg.info.resolution);
+        int end_y = static_cast<int>((ray_endpoints[i].y - map_msg.info.origin.position.y) / map_msg.info.resolution);
+
+        // Calculate distance to endpoint
+        double dx = ray_endpoints[i].x - robot_pose.position.x;
+        double dy = ray_endpoints[i].y - robot_pose.position.y;
+        double distance = std::sqrt(dx * dx + dy * dy);
+
+        if (distance <= max_range)
+        {
+            // Mark cells along the ray as free (0)
+            plotLine(robot_x, robot_y, end_x, end_y, 0);
+
+            // Mark the endpoint as occupied (100)
+            if (end_x >= 0 && end_x < map_msg.info.width &&
+                end_y >= 0 && end_y < map_msg.info.height)
+            {
+                map_msg.data[end_y * map_msg.info.width + end_x] = 100;
+            }
+        }
+    }
+}
+
+// Helper function to expand the map if needed
+void MCLNode::expandMapIfNeeded(
+    nav_msgs::msg::OccupancyGrid &map_msg,
+    const geometry_msgs::msg::Pose &robot_pose,
+    double expansion_margin)
+{
+    // Check if robot is too close to map boundaries
+    double robot_x = robot_pose.position.x;
+    double robot_y = robot_pose.position.y;
+
+    // Get map boundaries in world coordinates
+    double map_min_x = map_msg.info.origin.position.x;
+    double map_min_y = map_msg.info.origin.position.y;
+    double map_max_x = map_min_x + map_msg.info.width * map_msg.info.resolution;
+    double map_max_y = map_min_y + map_msg.info.height * map_msg.info.resolution;
+
+    // Calculate required expansion in each direction
+    int expand_left = 0, expand_right = 0, expand_up = 0, expand_down = 0;
+
+    if (robot_x - map_min_x < expansion_margin)
+    {
+        expand_left = static_cast<int>((expansion_margin - (robot_x - map_min_x)) / map_msg.info.resolution) + 1;
+    }
+    if (map_max_x - robot_x < expansion_margin)
+    {
+        expand_right = static_cast<int>((expansion_margin - (map_max_x - robot_x)) / map_msg.info.resolution) + 1;
+    }
+    if (robot_y - map_min_y < expansion_margin)
+    {
+        expand_down = static_cast<int>((expansion_margin - (robot_y - map_min_y)) / map_msg.info.resolution) + 1;
+    }
+    if (map_max_y - robot_y < expansion_margin)
+    {
+        expand_up = static_cast<int>((expansion_margin - (map_max_y - robot_y)) / map_msg.info.resolution) + 1;
+    }
+
+    // If no expansion needed, return
+    if (expand_left == 0 && expand_right == 0 && expand_up == 0 && expand_down == 0)
+    {
+        return;
+    }
+
+    // Create new data array
+    uint32_t new_width = map_msg.info.width + expand_left + expand_right;
+    uint32_t new_height = map_msg.info.height + expand_up + expand_down;
+    std::vector<int8_t> new_data(new_width * new_height, -1);
+
+    // Copy existing data to new array
+    for (uint32_t y = 0; y < map_msg.info.height; ++y)
+    {
+        for (uint32_t x = 0; x < map_msg.info.width; ++x)
+        {
+            uint32_t old_idx = y * map_msg.info.width + x;
+            uint32_t new_idx = (y + expand_down) * new_width + (x + expand_left);
+            new_data[new_idx] = map_msg.data[old_idx];
+        }
+    }
+
+    // Update map properties
+    map_msg.info.origin.position.x -= expand_left * map_msg.info.resolution;
+    map_msg.info.origin.position.y -= expand_down * map_msg.info.resolution;
+    map_msg.info.width = new_width;
+    map_msg.info.height = new_height;
+    map_msg.data = std::move(new_data);
 }
 
 int main(int argc, char *argv[])

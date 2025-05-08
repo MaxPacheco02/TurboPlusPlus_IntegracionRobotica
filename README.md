@@ -11,6 +11,10 @@
 </div>
 
 <div align="center">
+  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/slam_x20.gif" width="800" height="495"/>
+</div>
+
+<div align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/swarm.gif" width="800" height="398"/>
 </div>
 
@@ -112,6 +116,15 @@ rviz2 -d ~/TurboPlusPlus_IntegracionRobotica/src/pzb_description/rviz/multiple.r
 
 # Terminal 2
 ros2 launch pzb_swarm multi_robot_launch.py
+```
+
+### Run SLAM with CUDA
+```Shell
+# Terminals 1-4
+# Run the GZ SIM Teleoperating Instructions
+
+# Terminal 5 
+ros2 run pzb_localization mcl_node
 ```
 
 ## Team members:
