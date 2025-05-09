@@ -16,6 +16,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 
+from launch.actions import ExecuteProcess
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import IncludeLaunchDescription
@@ -30,17 +31,28 @@ def generate_launch_description():
 
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_pzb_description = get_package_share_directory('pzb_description')
+    model_path = os.path.join(pkg_pzb_description, 'models')
 
-    gz_sim = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={
-            'gz_args': PathJoinSubstitution([
-            pkg_pzb_description,
-            'worlds',
-            'pzb_world.sdf'
-        ])}.items(),
-    )
+    world_path = PathJoinSubstitution([pkg_pzb_description, 'worlds', 'pzb_world.sdf'])
+    gz_sim = ExecuteProcess(
+        cmd=['gz', 'sim', '-v', '4', '-r', world_path],
+        output='screen',
+        additional_env={
+            'GZ_IP': '127.0.0.1',
+            'GZ_SIM_RESOURCE_PATH': f"{model_path}:" + os.environ.get('GZ_SIM_RESOURCE_PATH', '')
+        }
+    ) 
+
+    # gz_sim = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
+    #     launch_arguments={
+    #         'gz_args': PathJoinSubstitution([
+    #         pkg_pzb_description,
+    #         'worlds',
+    #         'pzb_world.sdf'
+    #     ])}.items(),
+    # )
 
     # Bridge
     bridge = Node(

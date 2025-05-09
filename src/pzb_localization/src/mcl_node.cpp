@@ -55,8 +55,8 @@ public:
                 fill_pc(map_pc_msg, map, 0, 0, 255, 255, 0.0);
             });
             
-        map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10);
-        local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10);
+        map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/map_pc", 10); // Full map with pointclouds???
+        local_map_pc_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pzb/pc", 10); // Laser scan from lidar
         mcl_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/mcl/odom", 10);
 
         timer_=this->create_wall_timer(10ms,std::bind(&MCLNode::update,this));

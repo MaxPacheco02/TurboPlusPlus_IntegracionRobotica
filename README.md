@@ -95,6 +95,21 @@ ros2 launch pzb_description rviz_launch.py
 ros2 run pzb_control pzb_teleop_low_level_node.py
 ```
 
+### Demian's Instructions
+```Shell
+# Rviz
+    ros2 launch pzb_description rviz_launch.py
+# Kinematic model
+    ros2 launch pzb_control pzb_control_launch.py
+# Teleop
+    ros2 run pzb_control pzb_teleop_low_level_node.py
+# Localization
+    ros2 run pzb_localization mcl_node
+# Show map
+    ros2 launch pzb_localization map_launch.py
+
+```
+
 ## Team members:
 ### *Andrés Carrizales - A00832679*
 ### *Daniel Castañon - A01284991*
