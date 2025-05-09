@@ -5,7 +5,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-set(cvplot_DIR "src/cvplot/build/")
+# set(cvplot_DIR "src/cvplot/build/")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -26,7 +26,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(pzb_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(cvplot REQUIRED)
+# find_package(cvplot REQUIRED)
 
 set(DEPENDENCIES
   ament_cmake
@@ -49,12 +49,12 @@ set(DEPENDENCIES
   cv_bridge
 )
 
-message("cvplot_FOUND: ${cvplot_FOUND}")
-include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
+# message("cvplot_FOUND: ${cvplot_FOUND}")
+# include_directories("${PROJECT_SOURCE_DIR}/cvplot/include/cvplot/")
 
 add_executable(mcl_node src/mcl_node.cpp)
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
-target_link_libraries(mcl_node cvplot)
+# target_link_libraries(mcl_node cvplot)
 
 
 # Install Python executables

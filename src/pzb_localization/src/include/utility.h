@@ -2,7 +2,7 @@
 #define UTILITY_H
 
 #include <vector>
-#include "../cvplot/include/cvplot/cvplot.h"
+// #include "../cvplot/include/cvplot/cvplot.h"
 #include <opencv2/opencv.hpp>
 
 struct particle;
@@ -20,7 +20,7 @@ namespace utility
     double evaluation(Robot *r, std::vector<particle> *belief);
     void p0_pos(Robot *r, std::vector<particle> *p);
     // visualize the robot and particles
-    void visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, std::vector<Point>& map);
+    // void visualization(Robot *robot, int step, std::vector<particle> *belief, std::vector<particle> *new_belief, std::vector<Point>& map);
 } // namespace utility
 
 #endif
