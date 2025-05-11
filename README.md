@@ -7,10 +7,6 @@
 </div> -->
 
 <div align="center">
-  <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/nvcc_mpc_x5.gif" width="800" height="569"/>
-</div>
-
-<div align="center">
   <img src="https://github.com/MaxPacheco02/TurboPlusPlus_IntegracionRobotica/blob/main/docs/slam_x60.gif" width="800" height="500"/>
 </div>
 
