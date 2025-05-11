@@ -261,7 +261,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 
     int particle_idx = 2 * particles_per_strategy;
     std::uniform_real_distribution<double> small_offset(-grid_spacing * 0.25, grid_spacing * 0.25);
-    std::uniform_real_distribution<double> angle_offset(-0.1, 0.1); // ~±5.7 degrees
+    std::uniform_real_distribution<double> angle_offset(-0.1, 0.1);
 
     for (int i = 0; i < grid_size && particle_idx < particles_N_; i++)
     {
@@ -458,6 +458,7 @@ void MCLNode::updatePointCloudMap(const std::vector<Point> &new_points)
             }
         }
     }
+    fill_pc(map_pc_msg_, map_, map_N_, 0, 0, 255, 255, 0.0);
 }
 
 double normalize_angle(double angle)

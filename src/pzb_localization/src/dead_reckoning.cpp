@@ -61,7 +61,7 @@ public:
         update_timer_ =
             this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
 
-        xi << 0, 0, 0;
+        xi << 0.01, 0.01, 0.01;
         xi_dot << 0, 0, 0;
 
         odometry_msg.header.frame_id = "odom";

@@ -62,7 +62,7 @@ private:
     pose_path.poses.push_back(pose_stamped_tmp_);
     
     // Erase elements when path is too long
-    if(pose_path.poses.size() > 1000){
+    if(pose_path.poses.size() > 5000){
       pose_path.poses.erase(pose_path.poses.begin(), pose_path.poses.begin()+1);
     }
 
