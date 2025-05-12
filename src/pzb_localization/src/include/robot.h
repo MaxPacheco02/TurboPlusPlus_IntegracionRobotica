@@ -28,6 +28,13 @@ public:
     // Sense the environment with sensors
     std::vector<double> sense(const std::vector<Point>& map, bool noise = true);
     std::vector<double> sense(const std::vector<Point>& map, geometry_msgs::msg::Pose ext_pose, bool noise);
+    void sense_cpu(
+        const std::vector<Point>& map,
+        std::vector<Point>& local_map,               // <-- now explicitly output
+        std::vector<double>& sensor,                 // <-- now explicitly output
+        const geometry_msgs::msg::Pose& ext_pose,
+        double angle_separation_deg,
+        bool add_noise);
     // Move the robot
     void move(double turn, double forward);
     // Update pose msg

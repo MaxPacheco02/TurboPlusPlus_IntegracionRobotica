@@ -54,6 +54,33 @@ set(DEPENDENCIES
 
 add_executable(mcl_node src/mcl_node.cpp)
 ament_target_dependencies(mcl_node ${DEPENDENCIES})
+
+foreach(dependency ${DEPENDENCIES})
+  list(APPEND DEPENDENCY_INCLUDE_DIRS ${${dependency}_INCLUDE_DIRS})
+endforeach()
+
+# Set include directories for all code
+include_directories(
+  ${PROJECT_SOURCE_DIR}/src/include
+  ${DEPENDENCY_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
+  /opt/ros/humble/include  # Adjust this if using a different ROS distro
+)
+
+# Compile all sources directly into the executable
+add_executable(mcl_node_test
+  src/mcl_node_test.cpp
+  src/include/robot.cpp
+  src/include/map_utils.cpp
+  # src/include/robot_utils.cpp
+  src/include/utility.cpp
+  # src/include/MCL.cpp
+  src/include/MCL_test.cpp
+
+)
+
+ament_target_dependencies(mcl_node_test ${DEPENDENCIES})
+
 # target_link_libraries(mcl_node cvplot)
 
 
@@ -64,6 +91,7 @@ DESTINATION lib/${PROJECT_NAME}
 
 install(TARGETS
   mcl_node
+  mcl_node_test
   DESTINATION lib/${PROJECT_NAME}
 )
 

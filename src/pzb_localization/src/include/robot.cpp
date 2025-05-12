@@ -71,6 +71,37 @@ std::vector<double> Robot::sense(const std::vector<Point>& map, geometry_msgs::m
     return measurements;
 }
 
+
+void Robot::sense_cpu(
+    const std::vector<Point>& map,
+    std::vector<Point>& local_map,               // <-- now explicitly output
+    std::vector<double>& sensor,                 // <-- now explicitly output
+    const geometry_msgs::msg::Pose& ext_pose,
+    double angle_separation_deg,
+    bool add_noise)
+{
+    // Compute local map from raycast
+    compute_raycast_cpu(map, local_map, ext_pose, angle_separation_deg);
+
+    // Resize and fill sensor values
+    sensor.clear();
+    sensor.reserve(local_map.size());
+
+    for (const auto& pt : local_map) {
+        double dx = pt.x - ext_pose.position.x;
+        double dy = pt.y - ext_pose.position.y;
+        double dist = std::sqrt(dx * dx + dy * dy);
+
+        if (add_noise) {
+            double noise_std = std::max(0.02, 0.01 * dist);  // 1% or 2cm min
+            double noise = utility::get_gaussian_random_number(0.0, noise_std);
+            dist += noise;
+        }
+
+        sensor.push_back(dist);
+    }
+}
+
 void Robot::move(double turn, double forward)
 {
     // set rotation, add gaussian noise with mean of rotation bias and turn_noise as variance

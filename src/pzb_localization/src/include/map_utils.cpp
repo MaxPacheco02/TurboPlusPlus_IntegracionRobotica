@@ -142,6 +142,56 @@ std::vector<Point> map2vec(const nav_msgs::msg::OccupancyGrid& map)
     return points;
 }
 
+std::vector<Point> map2vector_cpu(const nav_msgs::msg::OccupancyGrid& map, int max_points)
+{
+    std::vector<Point> points;
+    if (map.data.empty()) return points;
+
+    const double origin_x = map.info.origin.position.x;
+    const double origin_y = map.info.origin.position.y;
+    const double resolution = map.info.resolution;
+    const int width = map.info.width;
+    const int height = map.info.height;
+
+    const std::array<int, 4> dx = {1, 0, -1, 0};
+    const std::array<int, 4> dy = {0, 1, 0, -1};
+    const std::array<int, 4> neighbor_offsets = {1, width, -1, -width};
+
+    int count = 0;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (max_points >= 0 && count >= max_points)
+                return points;
+
+            const int idx = y * width + x;
+            if (map.data[idx] < 100 && map.data[idx] >= 0) continue;
+
+            bool is_boundary = false;
+            for (int n = 0; n < 4; ++n) {
+                const int nx = x + dx[n];
+                const int ny = y + dy[n];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height)
+                    continue;
+
+                const int neighbor_idx = idx + neighbor_offsets[n];
+                if (map.data[neighbor_idx] == 0) {
+                    is_boundary = true;
+                    break;
+                }
+            }
+
+            if (is_boundary) {
+                double world_x = origin_x + (x + 0.5) * resolution;
+                double world_y = origin_y + (y + 0.5) * resolution;
+                points.push_back({world_x, world_y});
+                ++count;
+            }
+        }
+    }
+
+    return points;
+}
+
 void compute_raycast(
     const std::vector<Point>& map, std::vector<Point>& visible_points,
     const geometry_msgs::msg::Pose& source_pose, double angle_separation
@@ -209,5 +259,50 @@ void compute_raycast(
         }
 
         visible_points.push_back(closest_point);
+    }
+}
+
+
+void compute_raycast_cpu(
+    const std::vector<Point>& map,       // input map
+    std::vector<Point>& local_map,       // output map (preallocated)
+    const geometry_msgs::msg::Pose& source_pose,
+    double angle_separation_deg)
+{
+    Point source{source_pose.position.x, source_pose.position.y};
+    double robot_yaw = tf2::getYaw(source_pose.orientation);
+
+    const double angle_resolution = angle_separation_deg * M_PI / 180.0;
+    const int num_rays = static_cast<int>(2.0 * M_PI / angle_resolution) + 1;
+    const double angle_threshold = 0.1 * angle_resolution;
+
+    local_map.clear();
+    local_map.resize(num_rays, Point{0.0, 0.0});
+
+    for (int i = 0; i < num_rays; ++i) {
+        double ray_angle = robot_yaw + i * angle_resolution;
+        while (ray_angle > M_PI) ray_angle -= 2.0 * M_PI;
+        while (ray_angle < -M_PI) ray_angle += 2.0 * M_PI;
+
+        double closest_dist = std::numeric_limits<double>::infinity();
+        Point closest_point{0.0, 0.0};
+
+        for (const auto& pt : map) {
+            double dx = pt.x - source.x;
+            double dy = pt.y - source.y;
+            double dist = std::sqrt(dx * dx + dy * dy);
+
+            double point_angle = std::atan2(dy, dx);
+            double angle_diff = point_angle - ray_angle;
+            while (angle_diff > M_PI) angle_diff -= 2.0 * M_PI;
+            while (angle_diff < -M_PI) angle_diff += 2.0 * M_PI;
+
+            if (std::abs(angle_diff) < angle_threshold && dist < closest_dist) {
+                closest_dist = dist;
+                closest_point = pt;
+            }
+        }
+
+        local_map[i] = closest_point;
     }
 }

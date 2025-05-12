@@ -10,6 +10,8 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <sensor_msgs/msg/point_field.hpp>
 
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/utils.hpp"
 #include <nav_msgs/msg/occupancy_grid.hpp>
 
 #include <limits>
@@ -47,9 +49,20 @@ std::vector<Point> map2vec(
     const nav_msgs::msg::OccupancyGrid& map
 );
 
+std::vector<Point> map2vector_cpu(
+  const nav_msgs::msg::OccupancyGrid& map, int max_points = -1
+);
+
 void compute_raycast(
     const std::vector<Point>& map, std::vector<Point>& visible_points,
     const geometry_msgs::msg::Pose& source_pose, double angle_separation
+);
+
+void compute_raycast_cpu(
+    const std::vector<Point>& map,       // input map
+    std::vector<Point>& local_map,       // output map (preallocated)
+    const geometry_msgs::msg::Pose& source_pose,
+    double angle_separation_deg
 );
 
 #endif

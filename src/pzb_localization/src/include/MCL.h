@@ -5,6 +5,9 @@
 
 struct particle
 {
+    // Default constructor - needed for vector resize operations
+    particle() : r(), w(0.0) {}
+
     particle(Robot r, double w);
     Robot r;
     double w;
