@@ -17,6 +17,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
     
 def generate_launch_description():
+    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
     
     rviz_config = os.path.join(get_package_share_directory("pzb_description"),"rviz/","rviz2.rviz")
 
@@ -29,26 +30,31 @@ def generate_launch_description():
     tf2 = Node(
         package="pzb_description",
         executable="pzb_tf2_publisher",
-    )
-
-    joint_state_publisher_node = Node(
-        package='joint_state_publisher',
-        executable='joint_state_publisher',
+        namespace=LaunchConfiguration('ns_'),
     )
 
     path_urdf = os.path.join(get_package_share_directory("pzb_description"), "urdf/", "pzb.urdf.xacro")
-    robot_description_content = ParameterValue(Command(['xacro ', path_urdf]), value_type=str)
-
+    robot_description_content = ParameterValue(
+        Command([
+            'xacro', ' ',
+            path_urdf, ' ',
+            'ns:=', LaunchConfiguration('ns_')
+        ]),
+        value_type=str
+    )
+    
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        parameters=[{ 
-            'robot_description': robot_description_content}]
+        parameters=[ 
+            {'robot_description': robot_description_content}
+        ],
+        namespace=LaunchConfiguration('ns_'),
     )
 
-    return LaunchDescription([
+    return LaunchDescription([   
+        ns_arg,
         rviz_node,
         tf2,
         robot_state_publisher_node,
-        # joint_state_publisher_node,
     ])

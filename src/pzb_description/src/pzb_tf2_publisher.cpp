@@ -17,15 +17,17 @@ public:
   FramePublisher()
   : Node("pzb_tf2_publisher")
   {
+    ns_ = this->get_namespace();
+
     tf_broadcaster_ =
       std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "pzb/odom", 10,
+        "odom", 10,
         std::bind(&FramePublisher::handle_pzb_pose, this, std::placeholders::_1));
 
     pose_path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
-        "pzb/pose_path", 10);
+        "pose_path", 10);
 
     pose_stamped_tmp_.header.frame_id = "odom";
     pose_path.header.frame_id = "odom";
@@ -38,9 +40,11 @@ private:
 
     // Update TF2 msg
     geometry_msgs::msg::TransformStamped t;
-    t.header.stamp = this->get_clock()->now();
+    // t.header.stamp = this->get_clock()->now();
+    t.header.stamp = msg->header.stamp;
+
     t.header.frame_id = "odom";
-    t.child_frame_id = "base_axis";
+    t.child_frame_id = ns_ + "/base_axis";
 
     t.transform.translation.x = msg->pose.pose.position.x;
     t.transform.translation.y = msg->pose.pose.position.y;
@@ -73,6 +77,8 @@ private:
   geometry_msgs::msg::PoseStamped pose_stamped_tmp_;
   nav_msgs::msg::Path pose_path;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+
+  std::string ns_;
 };
 
 int main(int argc, char * argv[])

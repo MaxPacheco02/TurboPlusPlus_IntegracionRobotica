@@ -28,6 +28,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
 
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_pzb_description = get_package_share_directory('pzb_description')
@@ -38,21 +39,24 @@ def generate_launch_description():
         cmd=['gz', 'sim', '-v', '4', '-r', world_path],
         output='screen',
         additional_env={
-            'GZ_IP': '127.0.0.1',
+            'GZ_IP': '127.0.0.2',
             'GZ_SIM_RESOURCE_PATH': f"{model_path}:" + os.environ.get('GZ_SIM_RESOURCE_PATH', '')
         }
-    ) 
+    )
 
     # gz_sim = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
     #         os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
     #     launch_arguments={
+    #         # GZ HARMONIC: 8.9.x
+    #         'gz_version': '8',
     #         'gz_args': PathJoinSubstitution([
     #         pkg_pzb_description,
     #         'worlds',
     #         'pzb_world.sdf'
     #     ])}.items(),
     # )
+
 
     # Bridge
     bridge = Node(
@@ -63,10 +67,11 @@ def generate_launch_description():
                    '/lidar@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
                    '/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
                    '/pzb_gz_drive@geometry_msgs/msg/Twist@gz.msgs.Twist',  
-                   '/gz_joints@sensor_msgs/msg/JointState@gz.msgs.Model',
+                   '/gz/joints@sensor_msgs/msg/JointState@gz.msgs.Model',
                    ],
         remappings=[
-            ('/pzb_gz_drive', '/cmd_vel'),
+            # ('/pzb_gz_drive', '/pzb/cmd_vel'),
+            # ('/pzb/odom', '/gz/odom'),
         ],
         # parameters=[{
         #     'qos_overrides./model/my_roboboat.subscriber.reliability': 'reliable',
@@ -74,13 +79,15 @@ def generate_launch_description():
         output='screen',
     )
 
-    gz_joint_broadcaster = Node(
+    gz_translator = Node(
         package="pzb_description",
-        executable="gz_joint_broadcaster",
+        executable="gz_translator",
+        namespace=LaunchConfiguration('ns_'),
     )
 
     return LaunchDescription([
+        ns_arg,
         gz_sim,
         bridge,
-        gz_joint_broadcaster,
+        gz_translator,
     ])
