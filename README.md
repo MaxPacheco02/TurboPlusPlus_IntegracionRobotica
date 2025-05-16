@@ -71,9 +71,9 @@ pip install .
 
 # Also setup the second lib which is interfaced via fatrop (first lib)
 cd ../..
-# This fails, but just in case
-git clone https://gitlab.kuleuven.be/u0110259/rockit_fatrop_plugin.git ./rockit/rockit/external/fatrop
-cd rockit
+cd rockit/rockit/external/fatrop
+git clone https://gitlab.kuleuven.be/u0110259/rockit_fatrop_plugin.git
+cd ../../..
 pip install .
 ```
 
