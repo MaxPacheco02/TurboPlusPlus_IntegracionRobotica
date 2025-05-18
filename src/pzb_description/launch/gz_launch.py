@@ -36,12 +36,12 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
         launch_arguments={
-            # GZ HARMONIC: 8.9.x
-            'gz_version': '8',
+            'gz_version': '7',
             'gz_args': PathJoinSubstitution([
             pkg_pzb_description,
             'worlds',
-            'pzb_world.sdf'
+            # 'pzb_world.sdf'
+            'pzb_world_avoidance.sdf'
         ])}.items(),
     )
 
@@ -55,6 +55,8 @@ def generate_launch_description():
                    '/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
                    '/pzb_gz_drive@geometry_msgs/msg/Twist@gz.msgs.Twist',  
                    '/gz/joints@sensor_msgs/msg/JointState@gz.msgs.Model',
+                   '/zed_rgbd/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
+                   '/zed_rgbd/image@sensor_msgs/msg/Image@gz.msgs.Image',
                    ],
         remappings=[
             # ('/pzb_gz_drive', '/pzb/cmd_vel'),

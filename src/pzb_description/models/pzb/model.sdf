@@ -1,14 +1,14 @@
-<?xml version="1.0" ?>
+<?xml version="1.0"?>
 <sdf version="1.6">
 
-<!--
+  <!--
 Control differential speed straight from gz plugin
 gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0.0}"
 -->
 
   <model name="puzzlebot">
     <pose>0 0 0.07 0 0 0</pose>
-    
+
     <!-- Base Link -->
     <link name="base_link">
       <visual name="base_visual">
@@ -35,7 +35,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
               <mu2>0.0</mu2>
             </ode>
           </friction>
-        </surface>        
+        </surface>
       </collision>
       <inertial>
         <mass>5.0</mass>
@@ -84,7 +84,36 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
           <topic>pc2</topic>
           <frame_id>custom_params/link</frame_id>
         </plugin>
-      </sensor>      
+      </sensor>
+
+      <sensor name="rgbd_camera" type="rgbd_camera">
+        <pose>0.15 0 0.1 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov>
+          <image>
+            <width>320</width>
+            <height>240</height>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>100</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>zed_rgbd</topic>
+        <gz_frame_id>usv</gz_frame_id>
+
+        <plugin
+          filename="RosGzPointCloud"
+          name="ros_gz_point_cloud::PointCloud">
+          <namespace>custom_params</namespace>
+          <topic>pc2</topic>
+          <frame_id>odom</frame_id>
+        </plugin>
+      </sensor>
+      
     </link>
 
     <!-- Right Wheel -->
@@ -118,7 +147,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
               <mu2>1e+3</mu2>
             </ode>
           </friction>
-        </surface>        
+        </surface>
       </collision>
       <inertial>
         <mass>5.0</mass>
@@ -164,7 +193,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
               <mu2>1e+3</mu2>
             </ode>
           </friction>
-        </surface>        
+        </surface>
       </collision>
       <inertial>
         <mass>5.0</mass>
