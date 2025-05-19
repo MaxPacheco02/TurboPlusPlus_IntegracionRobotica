@@ -35,9 +35,9 @@ MCLNode::~MCLNode()
 void MCLNode::initializeMap()
 {
     // Initialize empty map with default size
-    map_msg_.info.resolution = 0.05; // cm per cell
-    map_msg_.info.width = 10 / map_msg_.info.resolution;       // 10 meters
-    map_msg_.info.height = 10 / map_msg_.info.resolution;      // 10 meters
+    map_msg_.info.resolution = 0.1;                      // cm per cell
+    map_msg_.info.width = 10 / map_msg_.info.resolution;  // 10 meters
+    map_msg_.info.height = 10 / map_msg_.info.resolution; // 10 meters
 
     // Center the map at robot's initial position
     map_msg_.info.origin.position.x = -5.0; // -5m to +5m range
@@ -63,8 +63,8 @@ void MCLNode::initializeMap()
 void MCLNode::initializeParameters()
 {
     particles_N_ = 500;
-    pc_ang_sep_ = 36.0; // Reduced from 9.0 for better angular resolution
-    update_rate_ = 50; // Hz
+    pc_ang_sep_ = 10.0; // Reduced from 9.0 for better angular resolution
+    update_rate_ = 50;  // Hz
 }
 
 void MCLNode::initializePublishersAndSubscribers()
@@ -76,7 +76,14 @@ void MCLNode::initializePublishersAndSubscribers()
         "pzb/pc", 10);
     mcl_pub_ = create_publisher<nav_msgs::msg::Odometry>(
         "mcl/odom", 10);
-    map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
+
+    // Matching QoS for map_server node
+    rclcpp::QoS qos_profile(rclcpp::KeepLast(1));
+    qos_profile.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
+    qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
+
+    map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", qos_profile);
+    // map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
 
     // Create subscribers
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
@@ -134,8 +141,25 @@ void MCLNode::laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 
     // Filter ranges according to pc_ang_sep_
     filtered_ranges_.clear();
-    int skip_rays = static_cast<int>((pc_ang_sep_ * M_PI / 180.0) / msg->angle_increment);
+
+    // With 720 points (0.5 degrees of separation), the i is 1
+    // For 360 points (1 deg of sep), the i would be 2...
+    // For 180 points (2 degs of sep), the i would be 4
+    // For 72 points (5 degrees of sep), the i would be 10
+
+    // n_desired = 360 / ang_sep
+    // n_desired * skip_i = msg->ranges.size()
+
+    // skip_i = msg->ranges.size() / (360 / ang_sep)
+
+    // int skip_rays = static_cast<int>((pc_ang_sep_ * M_PI / 180.0) / msg->angle_increment);
+    int skip_rays = msg->ranges.size() / (360 / pc_ang_sep_);
     skip_rays = std::max(1, skip_rays);
+    
+    RCLCPP_ERROR(get_logger(), "Original scan size: %d.", msg->ranges.size());
+    RCLCPP_ERROR(get_logger(), "Estimated original scan size: %f.", 2*M_PI / msg->angle_increment);
+    RCLCPP_ERROR(get_logger(), "Proposed index jump from original scan: %d.", skip_rays);
+    RCLCPP_ERROR(get_logger(), "Which would generate %f points", 2*M_PI / (skip_rays*msg->angle_increment));
 
     for (size_t i = 0; i < msg->ranges.size(); i += skip_rays)
     {
