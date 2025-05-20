@@ -75,7 +75,7 @@ public:
         setupRandomStates<<<blocks, threadsPerBlock>>>(d_random_states, time(NULL), particles_N);
 
         // Initialize noise parameters in constant memory
-        float h_noise_params[3] = {0.05f, 0.01f, 0.1f}; // forward, turn, sense noise
+        float h_noise_params[3] = {0.01f, 0.02f, 0.05f}; // forward, turn, sense noise
         cudaMemcpyToSymbol(d_noise_params, h_noise_params, sizeof(float) * 3);
 
         return cudaGetLastError() == cudaSuccess;
@@ -164,57 +164,66 @@ __device__ double calculateMeasurementLikelihood(
     const double squared_diff = diff * diff;
 
     // More robust likelihood function with bounded minimum
-    const double min_likelihood = 1e-3;
-    const double max_squared_diff = 8.0 * var; // Allow larger differences
+    const double min_likelihood = 1e-6;
+    const double max_squared_diff = 4.0 * var; // Allow larger differences
 
     double likelihood = exp(-squared_diff / max_squared_diff);
     return fmax(likelihood, min_likelihood);
 }
 
 __global__ void calculateWeightsKernel(
-    DeviceParticle* particles,
-    float* measurements,
-    float* actual_measurements,
+    DeviceParticle *particles,
+    float *measurements,
+    float *actual_measurements,
     int N,
     int num_rays)
 {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
+    if (idx >= N)
+        return;
 
-    float total_log_likelihood = 0.0f;
-    const float measurement_var = 0.1f;  // Might need tuning
-    int valid_measurements = 0;
+    if (idx < 5) {
+        printf("Particle %d before: weight=%f\n", idx, particles[idx].weight);
+    }
+
+    // Define constants
+    const float min_weight = 0.1f;
+    const float max_weight = 1.0f;
+    const float measurement_var = 0.2f;
     
-    for (int j = 0; j < num_rays; j ++) {
+    float total_log_likelihood = 0.0f;
+    int valid_measurements = 0;
+
+    for (int j = 0; j < num_rays; j++) {
         const float predicted = measurements[idx * num_rays + j];
         const float actual = actual_measurements[j];
-        
+
         if (predicted > 0.1f && actual > 0.1f) {
             const float diff = predicted - actual;
             const float squared_diff = diff * diff;
-            
-            // More aggressive likelihood function
-            float log_likelihood = -squared_diff / (measurement_var);
+            float log_likelihood = -squared_diff / (2.0f * measurement_var * measurement_var);
+            log_likelihood = fmaxf(log_likelihood, -20.0f);
             total_log_likelihood += log_likelihood;
             valid_measurements++;
         }
     }
-    
+
     // Calculate final weight
     float weight;
-    if (valid_measurements > 5) {
-        // Convert from log space and apply exponential scaling
-        weight = expf(total_log_likelihood * 30.0f);  // Multiply to make differences more pronounced
-        
-        // Ensure reasonable bounds
-        const float min_weight = 1e-6f;
-        const float max_weight = 1.0f;
+    if (valid_measurements > num_rays / 4) {  // Require 25% valid measurements
+        float normalized_log_likelihood = (total_log_likelihood + 1200.0f) / 10.0f;
+        weight = expf(normalized_log_likelihood);
         weight = fmaxf(fminf(weight, max_weight), min_weight);
     } else {
-        weight = 1e-6f;  // Very low weight for particles with few valid measurements
+        weight = min_weight;  // Use same minimum weight for consistency
     }
-    
+
     particles[idx].weight = weight;
+
+    if (idx < 5) {
+        printf("Particle %d after: weight=%f, valid_measurements=%d, total_log_likelihood=%f\n",
+               idx, particles[idx].weight, valid_measurements, total_log_likelihood);
+    }
 }
 
 __global__ void setupRandomStates(curandState *states, unsigned long seed, int N)
@@ -378,43 +387,45 @@ extern "C"
     }
 
     void particlesSensing(
-        particle* X, int X_N,
-        double* Z, int Z_N,
-        Point* map, int map_N,
+        particle *X, int X_N,
+        double *Z, int Z_N,
+        Point *map, int map_N,
         double ang_sep)
     {
-    
+
         // Allocate device memory
-        float* d_measurements;
-        float* d_actual_measurements;
+        float *d_measurements;
+        float *d_actual_measurements;
         cudaMalloc(&d_measurements, X_N * Z_N * sizeof(float));
         cudaMalloc(&d_actual_measurements, Z_N * sizeof(float));
-    
+
         // Convert actual measurements to float
-        float* h_actual_measurements = new float[Z_N];
-        for (int i = 0; i < Z_N; i++) {
+        float *h_actual_measurements = new float[Z_N];
+        for (int i = 0; i < Z_N; i++)
+        {
             h_actual_measurements[i] = static_cast<float>(Z[i]);
         }
-    
+
         // Copy to device
         cudaMemcpy(d_actual_measurements, h_actual_measurements,
                    Z_N * sizeof(float), cudaMemcpyHostToDevice);
-    
+
         // Convert particles
-        DeviceParticle* d_particles;
+        DeviceParticle *d_particles;
         cudaMalloc(&d_particles, X_N * sizeof(DeviceParticle));
-        DeviceParticle* h_particles = new DeviceParticle[X_N];
-        
-        for (int i = 0; i < X_N; i++) {
+        DeviceParticle *h_particles = new DeviceParticle[X_N];
+
+        for (int i = 0; i < X_N; i++)
+        {
             h_particles[i].x = X[i].r.get_x();
             h_particles[i].y = X[i].r.get_y();
             h_particles[i].theta = X[i].r.get_theta();
             h_particles[i].weight = X[i].w;
         }
-        
+
         cudaMemcpy(d_particles, h_particles,
                    X_N * sizeof(DeviceParticle), cudaMemcpyHostToDevice);
-    
+
         // First get predicted measurements
         raycastKernel<<<X_N, Z_N>>>(
             map, map_N,
@@ -422,35 +433,37 @@ extern "C"
             d_measurements,
             Z_N,
             ang_sep * M_PI / 180.0);
-    
+
         // Then calculate weights
         dim3 blockDim(256);
         dim3 gridDim((X_N + blockDim.x - 1) / blockDim.x);
-    
+
         calculateWeightsKernel<<<gridDim, blockDim>>>(
             d_particles,
             d_measurements,
             d_actual_measurements,
             X_N,
             Z_N);
-    
+
         // Copy back results
         cudaMemcpy(h_particles, d_particles,
                    X_N * sizeof(DeviceParticle), cudaMemcpyDeviceToHost);
-    
+
         // Convert back to host particles
-        for (int i = 0; i < X_N; i++) {
+        for (int i = 0; i < X_N; i++)
+        {
             X[i].r.set_states(h_particles[i].x, h_particles[i].y, h_particles[i].theta);
             X[i].w = h_particles[i].weight;
         }
-    
+
         float min_w = 1.0f, max_w = 0.0f, sum_w = 0.0f;
-        for (int i = 0; i < X_N; i++) {
+        for (int i = 0; i < X_N; i++)
+        {
             min_w = fmin(min_w, X[i].w);
             max_w = fmax(max_w, X[i].w);
             sum_w += X[i].w;
         }
-    
+
         // Cleanup
         delete[] h_actual_measurements;
         delete[] h_particles;
@@ -458,6 +471,5 @@ extern "C"
         cudaFree(d_actual_measurements);
         cudaFree(d_particles);
     }
-
 
 } // extern "C"

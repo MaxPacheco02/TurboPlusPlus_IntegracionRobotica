@@ -40,8 +40,8 @@ def generate_launch_description():
             'gz_args': PathJoinSubstitution([
             pkg_pzb_description,
             'worlds',
-            # 'pzb_world.sdf'
-            'pzb_world_avoidance.sdf'
+            'pzb_world.sdf'
+            # 'pzb_world_avoidance.sdf'
         ])}.items(),
     )
 

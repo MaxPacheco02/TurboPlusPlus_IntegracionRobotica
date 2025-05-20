@@ -3,6 +3,7 @@
 
 #include "robot_utils.h"
 #include "cuda_kernels.h"
+#include <random>
 
 /**
  * Monte Carlo Localization implementation
@@ -20,6 +21,8 @@ private:
     void resampleParticles(particle* new_belief);
     void normalizeWeights();
     double findMaxWeight() const;
+
+    std::mt19937 gen{std::random_device{}()};
 
     particle* particles_;
     int num_particles_;

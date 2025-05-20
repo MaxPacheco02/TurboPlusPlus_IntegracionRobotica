@@ -62,9 +62,9 @@ void MCLNode::initializeMap()
 
 void MCLNode::initializeParameters()
 {
-    particles_N_ = 500;
-    pc_ang_sep_ = 10.0; // Reduced from 9.0 for better angular resolution
-    update_rate_ = 50;  // Hz
+    particles_N_ = 1000;
+    pc_ang_sep_ = 5.0; // Reduced from 9.0 for better angular resolution
+    update_rate_ = 20;  // Hz
 }
 
 void MCLNode::initializePublishersAndSubscribers()
@@ -224,7 +224,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 {
     // Initialize robot
     robot_.set_states(0.0, 0.0, 0.0);
-    robot_.set_noise(0.02, 0.05, 0.02);
+    robot_.set_noise(0.01, 0.02, 0.05);
 
     // Initialize CUDA memory
     particles_size_ = particles_N_ * sizeof(particle);
