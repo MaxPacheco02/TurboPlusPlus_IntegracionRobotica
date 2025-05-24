@@ -30,6 +30,9 @@
 <link name="${ns}/base_footprint">
 </link>
 
+<link name="laser">
+</link>
+
 <link name="${ns}/base_axis">
 </link>
 
@@ -50,6 +53,12 @@
       <origin xyz="0 0 0" rpy="0 0 3.14159"/>
     </visual>
 </link>
+
+<joint name="laser_pointcloud_joint" type="fixed"> 
+  <parent link="${ns}/base_axis"/>
+  <child link="laser"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
 
 <joint name="axis_footprint_joint" type="fixed"> 
   <parent link="${ns}/base_axis"/>
