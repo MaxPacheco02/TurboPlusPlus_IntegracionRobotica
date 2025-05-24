@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(pzb_control)
+project(pzb_control_kal)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -20,6 +20,7 @@ find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(aru_interfaces REQUIRED)
 
 install(DIRECTORY
   launch
@@ -40,6 +41,7 @@ set(DEPENDENCIES
   Eigen3
   tf2_geometry_msgs
   pzb_msgs
+  aru_interfaces
 )
 
 add_executable(state_estimate src/state_estimate.cpp)

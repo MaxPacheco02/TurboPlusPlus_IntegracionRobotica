@@ -17,9 +17,9 @@ from launch_ros.substitutions import FindPackageShare
     
 def generate_launch_description():
     
-    rviz_config = os.path.join(get_package_share_directory("pzb_control"),"rviz/","rviz.rviz")
+    rviz_config = os.path.join(get_package_share_directory("pzb_control_kal"),"rviz/","rviz.rviz")
     pzb_config = os.path.join(
-        get_package_share_directory('pzb_control'),
+        get_package_share_directory('pzb_control_kal'),
         'config',
         'conf.yaml'
     )
@@ -31,7 +31,7 @@ def generate_launch_description():
     )
 
     state_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='state_estimate',
         parameters=[pzb_config],
 
@@ -44,24 +44,24 @@ def generate_launch_description():
     )
 
     guidance_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='guidance_node',
         parameters=[pzb_config],
     )
 
 
     line_follower_path_publisher_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='line_follower_path_publisher_node',
     )
 
     pzb_teleop_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='pzb_teleop_node.py',
     )
 
     path_publisher_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='path_publisher_node.py',
     )
 

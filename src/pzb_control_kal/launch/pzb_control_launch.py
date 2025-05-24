@@ -18,13 +18,13 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     
     pzb_config = os.path.join(
-        get_package_share_directory('pzb_control'),
+        get_package_share_directory('pzb_control_kal'),
         'config',
         'conf.yaml'
     )
 
     state_node = Node(
-        package='pzb_control',
+        package='pzb_control_kal',
         executable='state_estimate',
         parameters=[pzb_config],
 
