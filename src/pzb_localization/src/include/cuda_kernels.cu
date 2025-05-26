@@ -182,47 +182,53 @@ __global__ void calculateWeightsKernel(
     if (idx >= N)
         return;
 
-    if (idx < 5) {
-        printf("Particle %d before: weight=%f\n", idx, particles[idx].weight);
-    }
+    // FIXED PARAMETERS FOR 10 RAYS:
+    const float measurement_var = 0.5f; // Measurement noise variance
+    const float max_range = 10.0f;      // Maximum sensor range
+    const float min_weight = 1e-6f;     // Minimum weight to avoid numerical issues
 
-    // Define constants
-    const float min_weight = 0.1f;
-    const float max_weight = 1.0f;
-    const float measurement_var = 0.2f;
-    
     float total_log_likelihood = 0.0f;
     int valid_measurements = 0;
 
-    for (int j = 0; j < num_rays; j++) {
+    for (int j = 0; j < num_rays; j++)
+    {
         const float predicted = measurements[idx * num_rays + j];
         const float actual = actual_measurements[j];
 
-        if (predicted > 0.1f && actual > 0.1f) {
-            const float diff = predicted - actual;
-            const float squared_diff = diff * diff;
-            float log_likelihood = -squared_diff / (2.0f * measurement_var * measurement_var);
-            log_likelihood = fmaxf(log_likelihood, -20.0f);
-            total_log_likelihood += log_likelihood;
-            valid_measurements++;
+        // Skip invalid measurements
+        if (predicted < 0.1f || actual < 0.1f ||
+            predicted > max_range || actual > max_range)
+        {
+            continue;
         }
+
+        // Calculate log likelihood for this measurement
+        const float diff = predicted - actual;
+        const float log_likelihood = -0.5f * (diff * diff) / (measurement_var * measurement_var);
+
+        total_log_likelihood += log_likelihood;
+        valid_measurements++;
     }
 
     // Calculate final weight
     float weight;
-    if (valid_measurements > num_rays / 4) {  // Require 25% valid measurements
-        float normalized_log_likelihood = (total_log_likelihood + 1200.0f) / 10.0f;
-        weight = expf(normalized_log_likelihood);
-        weight = fmaxf(fminf(weight, max_weight), min_weight);
-    } else {
-        weight = min_weight;  // Use same minimum weight for consistency
+    if (valid_measurements >= num_rays / 3)
+    { // Need at least 3-4 valid measurements
+        // Direct exponential of average log likelihood
+        weight = expf(total_log_likelihood / valid_measurements);
+    }
+    else
+    {
+        weight = min_weight;
     }
 
     particles[idx].weight = weight;
 
-    if (idx < 5) {
-        printf("Particle %d after: weight=%f, valid_measurements=%d, total_log_likelihood=%f\n",
-               idx, particles[idx].weight, valid_measurements, total_log_likelihood);
+    if (idx < 5)
+    {
+        printf("Particle %d: weight=%f, valid=%d, avg_log_likelihood=%f\n",
+               idx, weight, valid_measurements,
+               valid_measurements > 0 ? total_log_likelihood / valid_measurements : 0);
     }
 }
 

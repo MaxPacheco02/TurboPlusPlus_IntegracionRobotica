@@ -59,8 +59,8 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
             <horizontal>
               <samples>720</samples>
               <resolution>1</resolution>
-              <min_angle>-3.14</min_angle>
-              <max_angle>3.14</max_angle>
+              <min_angle>0.0</min_angle>
+              <max_angle>6.28</max_angle>
             </horizontal>
             <vertical>
               <samples>16</samples>

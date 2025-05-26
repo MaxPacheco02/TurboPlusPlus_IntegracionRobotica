@@ -35,7 +35,7 @@ MCLNode::~MCLNode()
 void MCLNode::initializeMap()
 {
     // Initialize empty map with default size
-    map_msg_.info.resolution = 0.1;                      // cm per cell
+    map_msg_.info.resolution = 0.01;                      // cm per cell
     map_msg_.info.width = 10 / map_msg_.info.resolution;  // 10 meters
     map_msg_.info.height = 10 / map_msg_.info.resolution; // 10 meters
 
@@ -62,9 +62,9 @@ void MCLNode::initializeMap()
 
 void MCLNode::initializeParameters()
 {
-    particles_N_ = 1000;
-    pc_ang_sep_ = 5.0; // Reduced from 9.0 for better angular resolution
-    update_rate_ = 20;  // Hz
+    particles_N_ = 2000;
+    pc_ang_sep_ = 10.0;   // Reduced from 9.0 for better angular resolution
+    update_rate_ = 10.0; // Hz
 }
 
 void MCLNode::initializePublishersAndSubscribers()
@@ -103,9 +103,9 @@ void MCLNode::initializePublishersAndSubscribers()
         std::bind(&MCLNode::laserCallback, this, std::placeholders::_1));
 
     // Create timer
-    timer_ = create_wall_timer(
-        std::chrono::milliseconds(1000 / update_rate_),
-        std::bind(&MCLNode::update, this));
+    // timer_ = create_wall_timer(
+    //     std::chrono::milliseconds(1000 / update_rate_),
+    //     std::bind(&MCLNode::update, this));
 }
 
 void MCLNode::initializeMessages()
@@ -129,6 +129,9 @@ void MCLNode::initializeMessages()
 
 void MCLNode::laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
+    laser_range_max_ = msg->range_max;
+    update();
+
     // Initialize map if it hasn't been done yet
     if (map_ == nullptr || map_N_ == 0)
     {
@@ -155,11 +158,11 @@ void MCLNode::laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     // int skip_rays = static_cast<int>((pc_ang_sep_ * M_PI / 180.0) / msg->angle_increment);
     int skip_rays = msg->ranges.size() / (360 / pc_ang_sep_);
     skip_rays = std::max(1, skip_rays);
-    
+
     RCLCPP_ERROR(get_logger(), "Original scan size: %d.", msg->ranges.size());
-    RCLCPP_ERROR(get_logger(), "Estimated original scan size: %f.", 2*M_PI / msg->angle_increment);
+    RCLCPP_ERROR(get_logger(), "Estimated original scan size: %f.", 2 * M_PI / msg->angle_increment);
     RCLCPP_ERROR(get_logger(), "Proposed index jump from original scan: %d.", skip_rays);
-    RCLCPP_ERROR(get_logger(), "Which would generate %f points", 2*M_PI / (skip_rays*msg->angle_increment));
+    RCLCPP_ERROR(get_logger(), "Which would generate %f points", 2 * M_PI / (skip_rays * msg->angle_increment));
 
     for (size_t i = 0; i < msg->ranges.size(); i += skip_rays)
     {
@@ -168,6 +171,10 @@ void MCLNode::laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
             msg->ranges[i] <= msg->range_max)
         {
             filtered_ranges_.push_back(msg->ranges[i]);
+        }
+        else
+        {
+            filtered_ranges_.push_back(std::numeric_limits<float>::infinity());
         }
     }
 
@@ -224,7 +231,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 {
     // Initialize robot
     robot_.set_states(0.0, 0.0, 0.0);
-    robot_.set_noise(0.01, 0.02, 0.05);
+    robot_.set_noise(0.05, 0.5, 0.1);
 
     // Initialize CUDA memory
     particles_size_ = particles_N_ * sizeof(particle);
@@ -239,8 +246,8 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
     checkCuda(cudaMallocManaged(&local_map_tmp_, local_map_size_));
 
     // Improved initialization strategy: multi-modal distribution
-    const double init_pos_var = 0.1;    // 10cm variance in position
-    const double init_angle_var = 0.05; // ~2.8 degrees variance in orientation
+    const double init_pos_var = 0.1;   // 10cm variance in position
+    const double init_angle_var = 0.5; // ~2.8 degrees variance in orientation
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -259,7 +266,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + tight_pos_dist(gen),
             init_y + tight_pos_dist(gen),
             init_theta + tight_angle_dist(gen));
-        r.set_noise(0.02, 0.05, 0.02);
+        r.set_noise(0.05, 0.5, 0.1);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
 
@@ -274,7 +281,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + wide_pos_dist(gen),
             init_y + wide_pos_dist(gen),
             init_theta + wide_angle_dist(gen));
-        r.set_noise(0.02, 0.05, 0.02);
+        r.set_noise(0.05, 0.5, 0.1);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
 
@@ -297,7 +304,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 
             Robot r;
             r.set_states(x, y, theta);
-            r.set_noise(0.02, 0.05, 0.02);
+            r.set_noise(0.05, 0.5, 0.1);
             particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
         }
     }
@@ -310,7 +317,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + wide_pos_dist(gen) * 1.5,
             init_y + wide_pos_dist(gen) * 1.5,
             init_theta + wide_angle_dist(gen) * 1.5);
-        r.set_noise(0.02, 0.05, 0.02);
+        r.set_noise(0.05, 0.5, 0.1);
         particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
     }
 }
@@ -318,6 +325,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 void MCLNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     pose_ = msg->pose.pose;
+    ang_vel_ = msg->twist.twist.angular.z;
 }
 
 void MCLNode::estimateCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
@@ -356,9 +364,9 @@ void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
     // Use current pose for map updates
-    double robot_x = pose_.position.x; // Using pose_ instead of mcl_msg_
-    double robot_y = pose_.position.y;
-    double robot_yaw = tf2::getYaw(pose_.orientation);
+    double robot_x = mcl_msg_.pose.pose.position.x; // Using mcl_msg_.pose.pose instead of mcl_msg_
+    double robot_y = mcl_msg_.pose.pose.position.y;
+    double robot_yaw = tf2::getYaw(mcl_msg_.pose.pose.orientation);
 
     // Temporary storage for new points
     std::vector<Point> new_points;
@@ -366,6 +374,11 @@ void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr ms
 
     for (size_t i = 0; i < filtered_ranges_.size(); i++)
     {
+        if (!std::isfinite(filtered_ranges_[i]))
+        {
+            continue; // Skip this measurement
+        }
+
         // Calculate angle for this ray
         double angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) + robot_yaw;
 
@@ -381,7 +394,8 @@ void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr ms
     }
 
     // Update point cloud map
-    updatePointCloudMap(new_points);
+    // updatePointCloudMap(new_points);
+    updatePointCloudFromGrid();
 }
 
 void MCLNode::updateGridCell(double robot_x, double robot_y, double point_x, double point_y)
@@ -482,6 +496,62 @@ void MCLNode::updatePointCloudMap(const std::vector<Point> &new_points)
             }
         }
     }
+    map_pc_msg_.data.clear();
+    fill_pc(map_pc_msg_, map_, map_N_, 0, 0, 255, 255, 0.0);
+}
+
+void MCLNode::updatePointCloudFromGrid()
+{
+    // Clear and regenerate point cloud from occupancy grid
+    map_N_ = 0;
+
+    const int width = map_msg_.info.width;
+    const int height = map_msg_.info.height;
+    const double resolution = map_msg_.info.resolution;
+    const double origin_x = map_msg_.info.origin.position.x;
+    const double origin_y = map_msg_.info.origin.position.y;
+
+    // Only extract occupied cells that are on boundaries
+    for (int y = 1; y < height - 1 && map_N_ < max_map_N_; y++)
+    {
+        for (int x = 1; x < width - 1 && map_N_ < max_map_N_; x++)
+        {
+            int idx = y * width + x;
+
+            // Check if this cell is occupied (> 65 to be sure)
+            if (map_msg_.data[idx] > 65)
+            {
+                // Check if it's a boundary cell (has at least one free neighbor)
+                bool is_boundary = false;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0)
+                            continue;
+                        int neighbor_idx = (y + dy) * width + (x + dx);
+                        if (map_msg_.data[neighbor_idx] < 50)
+                        {
+                            is_boundary = true;
+                            break;
+                        }
+                    }
+                    if (is_boundary)
+                        break;
+                }
+
+                // Add boundary points to point cloud
+                if (is_boundary)
+                {
+                    map_[map_N_].x = origin_x + (x + 0.5) * resolution;
+                    map_[map_N_].y = origin_y + (y + 0.5) * resolution;
+                    map_N_++;
+                }
+            }
+        }
+    }
+
+    // Update visualization
     fill_pc(map_pc_msg_, map_, map_N_, 0, 0, 255, 255, 0.0);
 }
 
@@ -561,7 +631,7 @@ void MCLNode::calcControl()
 
     // Adjust thresholds for minimum movement
     const double min_move = 0.001; // 1mm
-    const double min_turn = 0.005; // ~0.3 degrees
+    const double min_turn = 0.001; // ~0.3 degrees
 
     if (fabs(control_.forward) < min_move && fabs(control_.turn) < min_turn)
     {
@@ -596,7 +666,7 @@ void MCLNode::update()
     }
 
     // Compute raycast from current position for visualization
-    compute_raycast(map_, map_N_, local_map_, pose_, pc_ang_sep_);
+    compute_raycast(map_, map_N_, local_map_, mcl_msg_.pose.pose, pc_ang_sep_);
     fill_pc(local_map_pc_msg_, local_map_, local_map_N_,
             255, 0, 0, 255, 0.05);
 
@@ -621,8 +691,18 @@ void MCLNode::update()
     }
 
     // Get sensor readings from current position
-    robot_.sense(map_, map_N_, local_map_tmp_, local_map_N_,
-                 z_, pc_ang_sep_, pose_, true);
+    // robot_.sense(map_, map_N_, local_map_tmp_, local_map_N_,
+    //              z_, pc_ang_sep_, mcl_msg_.pose.pose, false);
+
+    for (int i = 0; i < local_map_N_; i++)
+    {
+        z_[i] = filtered_ranges_[i];
+        if (!std::isfinite(filtered_ranges_[i]))
+        {
+            // z_[i] = 0.0;
+            z_[i] = laser_range_max_;
+        }
+    }
 
     // Run MCL update
     MCL mcl(particles_, particles_N_, control_, z_, local_map_N_,

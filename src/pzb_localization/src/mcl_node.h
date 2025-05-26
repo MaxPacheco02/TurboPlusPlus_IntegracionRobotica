@@ -11,6 +11,7 @@
 #include "tf2/utils.hpp"
 #include "MCL.h"
 #include "map_utils.h"
+#include <limits>
 #include "robot_utils.h"
 
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -41,7 +42,8 @@ private:
     void laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void updateGridCell(double robot_x, double robot_y, double point_x, double point_y);
-    void updatePointCloudMap(const std::vector<Point>& new_points);
+    void updatePointCloudMap(const std::vector<Point> &new_points);
+    void updatePointCloudFromGrid();
 
     void expandMapIfNeeded(
         nav_msgs::msg::OccupancyGrid &map_msg,
@@ -99,6 +101,9 @@ private:
     size_t local_map_size_;
     int local_map_N_;
     Point *local_map_;
+
+    double ang_vel_;
+    double laser_range_max_;
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub_;
     std::vector<double> filtered_ranges_;

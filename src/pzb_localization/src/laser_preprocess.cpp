@@ -50,21 +50,26 @@ public:
                 laser_msg.scan_time = msg.scan_time;
                 laser_msg.time_increment = msg.time_increment;
 
-                // Reduce the size of msg to 360
-                int skip_rays = msg.ranges.size() / (360 / 1);
-                skip_rays = std::max(1, skip_rays);
-
-                RCLCPP_ERROR(get_logger(), "Original scan size: %d.", msg.ranges.size());
-                RCLCPP_ERROR(get_logger(), "Estimated original scan size: %f.", 2 * M_PI / msg.angle_increment);
-                RCLCPP_ERROR(get_logger(), "Proposed index jump from original scan: %d.", skip_rays);
-                RCLCPP_ERROR(get_logger(), "Which would generate %f points", 2 * M_PI / (skip_rays * msg.angle_increment));
+                // If we want 720 points:
+                int DESIRED_POINTS = 360;
+                const double stride = static_cast<double>(msg.ranges.size()) / DESIRED_POINTS;
 
                 double ang_min{0}, ang_max{0};
                 double range_min{0}, range_max{0};
+
+                laser_msg.ranges.reserve(DESIRED_POINTS);
+                laser_msg.intensities.reserve(DESIRED_POINTS);
+
+                // ang = min + inc * i
+                // If i want it at zero...
+                // i = (0 - min) / inc
+                int anchor_zero = - msg.angle_min / msg.angle_increment;
                 
-                for (size_t i = 0; i < msg.ranges.size(); i += skip_rays)
+                for (size_t i = 0; i < DESIRED_POINTS; i ++)
                 {
-                    int idx = (i + msg.ranges.size() / 2) % msg.ranges.size();
+                    // std::size_t idx = static_cast<std::size_t>(std::round(i * stride) + msg.ranges.size() / 2 + anchor_zero) % msg.ranges.size();
+                    std::size_t idx = static_cast<std::size_t>(std::round(i * stride)) % msg.ranges.size();
+
                     laser_msg.ranges.push_back(msg.ranges[idx]);
                     laser_msg.intensities.push_back(msg.intensities[idx]);
 
@@ -73,19 +78,14 @@ public:
                         ang_min = current_ang;
                     if (current_ang > ang_max)
                         ang_max = current_ang;
-
-                    // if(msg.ranges[idx] < range_min && msg.ranges[idx] > 0)
-                    //     range_min = msg.ranges[idx];
-                    // if(msg.ranges[idx] > range_max && msg.ranges[idx] <= msg.range_max)
-                    //     range_max = msg.ranges[idx];
                 }
 
-                laser_msg.angle_min = ang_min;
-                laser_msg.angle_max = ang_max;
+                laser_msg.angle_min = 0;
+                laser_msg.angle_max = 2 * M_PI;
                 laser_msg.angle_increment = (ang_max - ang_min) / laser_msg.ranges.size();
                 
-                laser_msg.range_min = msg.range_min;
-                laser_msg.range_max = msg.range_max;
+                laser_msg.range_min = 0.0;
+                laser_msg.range_max = 1.0;
 
                 laser_pub_->publish(laser_msg);
             });

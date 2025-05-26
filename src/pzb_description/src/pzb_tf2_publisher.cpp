@@ -23,7 +23,7 @@ public:
       std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", 10,
+        "/mcl/odom", 10,
         std::bind(&FramePublisher::handle_pzb_pose, this, std::placeholders::_1));
 
     pose_path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
