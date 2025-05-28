@@ -34,7 +34,7 @@
 
 #include "aru_interfaces/msg/aruco_list.hpp"
 
-// GAYMAN LOCALIZATION (EXTENDED)
+// KALMAN LOCALIZATION (EXTENDED)
 
 using namespace std::chrono_literals;
 
@@ -49,10 +49,6 @@ public:
         wheel_relation2 = this->get_parameter("wheel_relation2").as_double();
         this->declare_parameter("angle_ponder", 0.0); // default angle_ponder
         angle_ponder = this->get_parameter("angle_ponder").as_double();
-
-        aru_sub_ = this->create_subscription<aru_interfaces::msg::ArucoList>(
-            "pzb/aru_sys",10,
-            std::bind(&StateEstimateNode::aru_sys_id, this,_1));
 
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
@@ -84,6 +80,10 @@ public:
                 update_xid_params_ws(w1, w2);
             });
 
+        aru_sub_ = this->create_subscription<aru_interfaces::msg::ArucoList>(
+            "pzb/aru_sys", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
+            std::bind(&StateEstimateNode::aru_sys_id, this,_1));
+
         w1_smooth_pub_ = this->create_publisher<std_msgs::msg::Float32>("/w1_smooth", 10);
         w2_smooth_pub_ = this->create_publisher<std_msgs::msg::Float32>("/w2_smooth", 10);
         pose_pub_ = this->create_publisher<geometry_msgs::msg::Vector3>("/pzb/pose", 10);
@@ -95,43 +95,41 @@ public:
 
         miu_hat << 0, 0, 0;
         miu_hat_dot << 0, 0, 0;
-        
-        //------------------------------------------------
-        H_k << 1.0, 0.0, 0.0,
-               0.0, 1.0, 0.0,
-               0.0, 0.0, 1.0;  
-        sigma_hat << 1.0, 0.0, 0.0,
-                     0.0, 1.0, 0.0,
-                     0.0, 0.0, 0.1;
-        Q_k << 0.5, 0.01, 0.01,
-               0.01, 0.5, 0.01,
-               0.01, 0.01, 0.2;
-        //------------------------------------------------
 
-        // cp desde kalman_localization.cp
-        //------------------------------------------------
+        // para kalman_localization
+        //------------------------------------------------  
+        Q_k << 0.0, 0.0, 0.0,
+               0.0, 0.0, 0.0,
+               0.0, 0.0, 0.0;
+
         // ID'S 0,1,2, etc.
-        aruco_map[0] = Eigen::Vector2f(1, 1);
-        aruco_map[1] = Eigen::Vector2f(-0.7, 3.3);
+        aruco_map[11] = Eigen::Vector2f(-0.26, -0.78);
+        aruco_map[10] = Eigen::Vector2f(-0.26, -1.95);
         aruco_map[2] = Eigen::Vector2f(4.2, -1.8);
 
-        R_k << 0.05, 0.0,
-              0.0, 0.05;
+        I.setIdentity();
+        I_2.setIdentity();
+
+        R_k << 0.001, 0.0,
+               0.0, 0.0001;
 
 
         nearest_id = -2;
         z_k << 0.0, 0.0;
         
+        H_k.setIdentity();
+        sigma_hat.setZero();
+        sigma_k.setZero();
+        sigma_w.setZero();
         miu_k.setZero();
-        miu_hat.setZero();
+        delta_w.setZero();
+        h_w.setZero();
         z_k.setZero();
         z_hat.setZero();
-        sigma_k.setZero();
         Z_k.setZero();
         G_k.setZero();
         K_k.setZero();  
         //------------------------------------------------
-        // cp desde kalman_localization
 
         pose_stamped_msg.header.frame_id = "odom";
         odometry_msg.header.frame_id = "odom";
@@ -148,9 +146,9 @@ public:
 
 private:
 
-    rclcpp::Subscription<aru_interfaces::msg::ArucoList>::SharedPtr aru_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr l_enc_sub_, r_enc_sub_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr l_enc_sub_, r_enc_sub_;
+    rclcpp::Subscription<aru_interfaces::msg::ArucoList>::SharedPtr aru_sub_;
 
     rclcpp::Publisher<geometry_msgs::msg::Vector3>::SharedPtr pose_pub_, vel_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr w1_smooth_pub_, w2_smooth_pub_;
@@ -183,7 +181,7 @@ private:
     int q_length{10};
 
     //------------------------------------------------
-    // Declaracion variables globales
+    // Para Kalman
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 
@@ -191,19 +189,14 @@ private:
     
     std::unordered_map<int, Eigen::Vector2f> aruco_map;
 
-    Eigen::Vector3f miu_k;
-    Eigen::Vector3f miu_hat;
-    Eigen::Vector3f miu_hat_dot;
-    Eigen::Vector2f z_k;
-    Eigen::Vector2f z_hat;
-    Eigen::Matrix3f sigma_k;
-    Eigen::Matrix3f sigma_hat;
-    Eigen::Matrix2f Z_k;
-    Eigen::Matrix2f R_k;
-    Eigen::Matrix3f H_k;
-    Eigen::Matrix3f Q_k; 
+    Eigen::Vector3f miu_k, miu_hat, miu_hat_dot;
+    Eigen::Vector2f z_k, z_hat;
+
+    Eigen::Matrix3f sigma_k, sigma_hat, H_k, Q_k, I;
+    Eigen::Matrix2f sigma_w, Z_k, R_k, I_2;
+
     Eigen::Matrix<float, 2, 3> G_k;
-    Eigen::Matrix<float, 3, 2> K_k;
+    Eigen::Matrix<float, 3, 2> K_k, h_w, delta_w;
 
     int nearest_id;
     //------------------------------------------------
@@ -227,28 +220,30 @@ private:
         H_k(0,2) = -(dt * miu_hat_dot(1));
         H_k(1,2) = dt * miu_hat_dot(0);
         
-        sigma_hat = (H_k * sigma_hat * H_k.transpose()) + Q_k;
+        sigma_w(0,0) = 0.5 * std::abs(w2); //kr
+        sigma_w(1,1) = 0.5 * std::abs(w1); //kl
+
+        delta_w << cos(miu_k(2)), cos(miu_k(2)),
+                   sin(miu_k(2)), sin(miu_k(2)),
+                   2/l, -2/l;
+
+        h_w = 0.5 * r * dt * delta_w;
+        Q_k = h_w * sigma_w * h_w.transpose();
+
+        sigma_hat = (H_k * sigma_k * H_k.transpose()) + Q_k;
 
         auto it = aruco_map.find(nearest_id);
 
         // REVISAR SI EL ID EXISTE EN EL MAPA 
         if (it != aruco_map.end()) {
-            RCLCPP_INFO(this->get_logger(), "HELLO WORLD FROM INSIDE THE KALMAN CORRECTION PHASE!!");
             const auto& marker_pos = it->second;
-            calc_ZHat(marker_pos.x(), marker_pos.y());
+            calc_zHat(marker_pos.x(), marker_pos.y());
             calc_Gradient_G(marker_pos.x(), marker_pos.y());
-            calc_Z();
-            calc_Kalman_Gain();
-            calc_Miu();
-            calc_Sigma();
+            everything_else();
         } else {
             miu_k = miu_hat;
             sigma_k = sigma_hat;
         }
-
-        // RCLCPP_INFO(this->get_logger(), "miu_hat = [%.2f, %.2f, %.2f]", miu_hat(0), miu_hat(1), miu_hat(2));
-        RCLCPP_INFO(this->get_logger(), "miu_k = [%.2f, %.2f, %.2f]", miu_k(0), miu_k(1), miu_k(2));
-
         //kalman local end
         //------------------------------------------------------------------------------
         
@@ -329,19 +324,18 @@ private:
     // -------------------------------------------------------------------------------------------------------------------------
     void aru_sys_id(const aru_interfaces::msg::ArucoList &msg){
         if (tf_buffer_.canTransform("base_axis","aruco_center",tf2::TimePointZero)) {
-            tf_aru = tf_buffer_.lookupTransform("base_axis","aruco_center",tf2::TimePointZero);
-            if(tf_aru.transform.rotation != msg.markers[0].pose.orientation){
+            if(msg.markers.size() > 1){
+                tf_aru = tf_buffer_.lookupTransform("base_axis","aruco_center",tf2::TimePointZero);
                 nearest_id = msg.markers[1].id;
-                float yaw = tf2::getYaw(tf_aru.transform.rotation);
-                z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), yaw;
+                double alpha = atan2(tf_aru.transform.translation.y,tf_aru.transform.translation.x);
+                z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), alpha;
             }else{
-                z_k << 0.0, 0.0;
                 nearest_id = -2;
             }
         }
     }
 
-    void calc_ZHat(double m_x_i, double m_y_i) {
+    void calc_zHat(double m_x_i, double m_y_i) {
         double dx = m_x_i - miu_hat(0);
         double dy = m_y_i - miu_hat(1);
 
@@ -350,7 +344,7 @@ private:
 
         bearing = std::fmod(bearing + M_PI, 2*M_PI) - M_PI;
 
-        z_hat << range, bearing;    
+        z_hat << range, bearing; //6
     }
 
     void calc_Gradient_G(double m_x_i, double m_y_i) {
@@ -366,27 +360,20 @@ private:
 
         G_k(1, 0) = delta_y / p;
         G_k(1, 1) = -delta_x / p;
-        G_k(1, 2) = -1.0;
+        G_k(1, 2) = -1.0; //7
     }
 
-    void calc_Z() {
-        Z_k = G_k * sigma_hat * G_k.transpose() + R_k;
-    }
-
-    void calc_Kalman_Gain() {
-        K_k = sigma_hat * G_k.transpose() * Z_k.inverse();
-    }
-
-    void calc_Miu() {
-        miu_k = miu_hat + K_k * (z_k - z_hat);
-    }
-
-    void calc_Sigma() {
-        Eigen::Matrix3f I = Eigen::Matrix3f::Identity();
-        sigma_k = (I - K_k * G_k) * sigma_hat;
+    void everything_else(){
+        Z_k = G_k * sigma_hat * G_k.transpose() + R_k; //8
+        K_k = sigma_hat * G_k.transpose() * Z_k.inverse(); //9
+        std::cout << "K_k: " << K_k << "\n" <<std::endl;
+        miu_k = miu_hat + K_k * (z_k - z_hat); //10
+        std::cout << "z_k: " << z_k << "\n" <<std::endl;
+        std::cout << "z_hat: " << z_hat << "\n" <<std::endl;
+        std::cout << "(z_k - z_hat): " << (z_k - z_hat) << "\n" << std::endl;
+        sigma_k = (I - K_k * G_k) * sigma_hat; //11
     }
     // -------------------------------------------------------------------------------------------------------------------------
-    
 };
 
 int main(int argc, char **argv)
@@ -396,3 +383,9 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
+
+
+
+
+// RCLCPP_INFO(this->get_logger(), "HELLO WORLD FROM INSIDE THE KALMAN CORRECTION PHASE!!");
+// RCLCPP_INFO(this->get_logger(), "miu_k = [%.2f, %.2f, %.2f]", miu_k(0), miu_k(1), miu_k(2));

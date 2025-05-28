@@ -20,11 +20,12 @@ def generate_launch_description():
 
     kalman_local_node = Node(
         package='aru_detection',
-        executable='kalman_exe',
-        name='local_node' 
+        executable='aru_exe',
+        name='aru_node',
+        output='screen' 
     )
 
 
-    # , aru_local_node
-    return LaunchDescription([obj_pos_node, aru_way_node, kalman_local_node])
+    # obj_pos_node, aru_way_node, 
+    return LaunchDescription([kalman_local_node])
 

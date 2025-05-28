@@ -27,7 +27,7 @@ def generate_launch_description():
         package='pzb_control_kal',
         executable='state_estimate',
         parameters=[pzb_config],
-
+        output='screen',
         # Comment remappings for closed loop (REAL LIFE)
         # Include remappings for open loop (SIMULATIONS AND TESTING)
         remappings=[

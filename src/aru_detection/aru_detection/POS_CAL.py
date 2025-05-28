@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
+from rclpy.node import Node
 import cv2
 import glob
 import numpy as np
-import json
 import os
 
 from ament_index_python.packages import get_package_share_directory
 
-# TOMAR FOTOS Y CALIBRAR CAMARA
+# CLASE PARA NODO DE CALIBRACION DE CAMARA 
 
-class CAM:
+class CalNode(Node):
 
-    def __init__(self,world):
+    def __init__(self):
+        super().__init__('ObjPos')
+        self.get_logger().info('NODO DE CALIBRACION')
         # MATRICES Y VECTORES OBTENIDOS DE CALIBRACION DE CAMARA
         self.CamMat = 0
         self.CamMatN = 0
@@ -25,26 +27,9 @@ class CAM:
         self.CamRotW = 0
         self.CamTraW = 0
 
-        self.worldString = world
+        self.worldString = "frame_0150.png"
 
-
-    # TOMAR FOTOS DE CHESSBOARD PARA CALIBRACION (*AHORITA NO LAS GUARDA)
-    def imageCapture(self):
-        IMG = cv2.VideoCapture(0)
-        num = 'A'
-
-        while IMG.isOpened():
-            ret, frame = IMG.read()
-            k = cv2.waitKey(1)
-            if k == ord('p'): 
-                S = 'chess' + num + '.png'
-                print("images saved!")
-                # num += 1
-            elif k == ord('q'):
-                break
-            cv2.imshow('Image',frame)
-        IMG.release()
-        cv2.destroyAllWindows()
+        self.cameraCalibrate()
 
 
     def cameraCalibrate(self):
@@ -97,6 +82,9 @@ class CAM:
             
             h,  w = img.shape[:2]
 
+            print("h: "+str(h)+" w: "+str(w))
+
+
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
             # Find the chess board corners
@@ -115,10 +103,10 @@ class CAM:
                 count += 1
                      
                 # Draw and display the corners (COMMENT)
-                # cv2.drawChessboardCorners(img, chessSize, corners2, ret)
-                # cv2.putText(img, fname[86:], (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
-                # cv2.imshow('Imagen', img)
-                # cv2.waitKey(0)
+                cv2.drawChessboardCorners(img, chessSize, corners2, ret)
+                cv2.putText(img, fname[86:], (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+                cv2.imshow('Imagen', img)
+                cv2.waitKey(0)
 
         cv2.destroyAllWindows()
 
@@ -135,4 +123,9 @@ class CAM:
 
         self.CamRotW = rvecs[worldIndex]
         self.CamTraW = tvecs[worldIndex]
-    
+
+        print("count: "+str(count))
+
+        print('self.CamMatN:\n' + str(self.CamMatN) + '\n')
+        print('self.CamDis:\n' + str(self.CamDis) + '\n')
+        print('roi: \n'+ str(roi) + '\n')

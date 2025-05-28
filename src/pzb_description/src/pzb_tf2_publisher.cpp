@@ -113,16 +113,6 @@
         t_aru.transform.rotation.x = msg->markers[1].pose.orientation.x;
         t_aru.transform.rotation.y = msg->markers[1].pose.orientation.y;
         t_aru.transform.rotation.z = msg->markers[1].pose.orientation.z;
-      }else{
-        // IGNORE (TO SUPRESS BROKEN TREE WARNING)
-        t_aru.transform.translation.x = 0;
-        t_aru.transform.translation.y = 0;
-        t_aru.transform.translation.z = 0;
-
-        t_aru.transform.rotation.w = 1;
-        t_aru.transform.rotation.x = 0;
-        t_aru.transform.rotation.y = 0;
-        t_aru.transform.rotation.z = 0;
       }
       tf_broadcaster_->sendTransform(t_aru);
     }

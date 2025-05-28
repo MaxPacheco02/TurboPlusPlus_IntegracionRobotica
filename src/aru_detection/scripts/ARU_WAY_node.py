@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 # CALCULO DESDE CERO DE ARUCO CENTER EN ODOM CON MATRICES HOMOGENEAS
+# *****CURRENTLY USELESS*****
 
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseArray
 from scipy.spatial.transform import Rotation
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped

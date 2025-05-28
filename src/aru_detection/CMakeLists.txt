@@ -20,6 +20,7 @@ find_package(Eigen3 REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(aru_interfaces REQUIRED)
+find_package(OpenCV REQUIRED)
 
 set(DEPENDENCIES
   sensor_msgs 
@@ -32,6 +33,7 @@ set(DEPENDENCIES
   Eigen3
   tf2_geometry_msgs
   aru_interfaces
+  OpenCV
 )
 
 install(DIRECTORY 
@@ -44,11 +46,11 @@ install(DIRECTORY
 include_directories(include)
 
 # CREATE CPP EXECS
-add_executable(kalman_exe src/kalman_localization.cpp)
-ament_target_dependencies(kalman_exe ${DEPENDENCIES})
+add_executable(aru_exe src/aru_node.cpp)
+ament_target_dependencies(aru_exe ${DEPENDENCIES})
 
-# INSTALL CPP EXECS
-install(TARGETS kalman_exe DESTINATION lib/${PROJECT_NAME})
+# # INSTALL CPP EXECS
+install(TARGETS aru_exe DESTINATION lib/${PROJECT_NAME})
 
 
 #---------------------------------------------------------------------------
@@ -59,16 +61,9 @@ ament_python_install_package(${PROJECT_NAME})
 
 # INSTALL EXECS
 install(PROGRAMS
-  scripts/ARU_node.py 
   scripts/ARU_WAY_node.py
-  scripts/localization_node.py
+  scripts/CAL_node.py
   DESTINATION lib/${PROJECT_NAME}
-)
-
-# PAQUETES
-install(DIRECTORY 
-  urdf/ 
-  DESTINATION share/${PROJECT_NAME}/urdf
 )
 
 install(DIRECTORY 
