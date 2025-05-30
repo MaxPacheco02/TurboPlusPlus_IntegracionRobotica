@@ -37,7 +37,8 @@ set(DEPENDENCIES
 )
 
 install(DIRECTORY 
-  launch/
+  launch
+  config
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -49,9 +50,12 @@ include_directories(include)
 add_executable(aru_exe src/aru_node.cpp)
 ament_target_dependencies(aru_exe ${DEPENDENCIES})
 
+add_executable(aru_tf2_exe src/aru_tf2_publisher.cpp)
+ament_target_dependencies(aru_tf2_exe ${DEPENDENCIES})
+
 # # INSTALL CPP EXECS
 install(TARGETS aru_exe DESTINATION lib/${PROJECT_NAME})
-
+install(TARGETS aru_tf2_exe DESTINATION lib/${PROJECT_NAME})
 
 #---------------------------------------------------------------------------
 

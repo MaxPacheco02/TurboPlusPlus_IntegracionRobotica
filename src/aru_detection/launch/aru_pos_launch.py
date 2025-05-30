@@ -6,26 +6,28 @@ from launch import LaunchDescription
 
 def generate_launch_description():
 
+    aru_config = os.path.join(
+        get_package_share_directory('aru_detection'),
+        'config/',
+        'aruco_map.yaml',
+    )
+
+    aru_tf2_publisher = Node(
+        package='aru_detection',
+        executable='aru_tf2_exe',
+        name='aruco_tf_publisher',
+        parameters=[aru_config],
+        output='screen',
+    )
+
     obj_pos_node = Node(
-        package='aru_detection',
-        executable='ARU_node.py',
-        name='aru_node'
-    )
-
-    aru_way_node = Node(
-        package='aru_detection',
-        executable='ARU_WAY_node.py',
-        name='way_node'
-    )
-
-    kalman_local_node = Node(
         package='aru_detection',
         executable='aru_exe',
         name='aru_node',
-        output='screen' 
+        output='screen', 
     )
 
 
     # obj_pos_node, aru_way_node, 
-    return LaunchDescription([kalman_local_node])
+    return LaunchDescription([obj_pos_node, aru_tf2_publisher])
 

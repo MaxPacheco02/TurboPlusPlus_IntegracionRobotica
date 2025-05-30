@@ -21,16 +21,9 @@ public:
             q.pop_front();
         }
         q.push_back(x);
-
+                                            
         double sum = std::accumulate(q.begin(), q.end(), 0.0);
         return sum / q.size();
-    }
-
-    // Low-pass filter
-    double lp_get(double x) {
-        double x_est = alpha_ * x_estA_ + (1.0 - alpha_) * x;
-        x_estA_ = x_est;
-        return x_est;
     }
 
 private:

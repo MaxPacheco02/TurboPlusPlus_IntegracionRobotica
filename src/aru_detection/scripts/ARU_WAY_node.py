@@ -49,13 +49,13 @@ class AruWay(Node):
         
 
         self.T_odom = np.array([msg.pose.pose.position.x, 
-                                 msg.pose.pose.position.y, 
-                                 msg.pose.pose.position.z])
+                                msg.pose.pose.position.y, 
+                                msg.pose.pose.position.z])
         
         Ro = Rotation.from_quat([msg.pose.pose.orientation.x,
-                                msg.pose.pose.orientation.y,
-                                msg.pose.pose.orientation.z,
-                                msg.pose.pose.orientation.w])
+                                 msg.pose.pose.orientation.y,
+                                 msg.pose.pose.orientation.z,
+                                 msg.pose.pose.orientation.w])
         
         H_T_odom = self.make_homo(Ro.as_matrix(),self.T_odom)
         H_T_cam_odom = H_T_odom @ self.H_T_axis @ self.H_T_base

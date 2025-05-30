@@ -44,7 +44,7 @@ public:
                 int marker_id = ids[i];
                 aruSeen_[marker_id].push_back(true);
                 
-                if (aruSeen_[marker_id].size() > 10 && std::all_of(aruSeen_[marker_id].begin(), aruSeen_[marker_id].end(), [](bool v){ return v; })) {
+                if (aruSeen_[marker_id].size() > 1 && std::all_of(aruSeen_[marker_id].begin(), aruSeen_[marker_id].end(), [](bool v){ return v; })) {
                     cv::Vec3d rvec, tvec;
                     cv::solvePnP(objp_, corners[i], camMatrix, distCoeffs, rvec, tvec);
 
