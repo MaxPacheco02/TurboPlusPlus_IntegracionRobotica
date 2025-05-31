@@ -11,7 +11,7 @@ from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 import numpy as np
 
-from aru_interfaces.msg import ArucoList
+from pzb_msgs.msg import ArucoList
 
 class AruWay(Node):
 

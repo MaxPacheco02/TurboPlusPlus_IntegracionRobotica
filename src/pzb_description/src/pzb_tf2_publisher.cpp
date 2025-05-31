@@ -19,8 +19,7 @@ public:
   {
     ns_ = this->get_namespace();
 
-    tf_broadcaster_ =
-      std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/mcl/odom", 10,

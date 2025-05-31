@@ -11,7 +11,7 @@
 #include "opencv2/core/eigen.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
-#include "aru_interfaces/msg/aruco_list.hpp"  
+#include "pzb_msgs/msg/aruco_list.hpp"  
 
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
@@ -26,7 +26,7 @@ public:
         
         pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/pzb/palway", 10);
 
-        aru_sub_ = this->create_subscription<aru_interfaces::msg::ArucoList>(
+        aru_sub_ = this->create_subscription<pzb_msgs::msg::ArucoList>(
             "pzb/aru_sys", 10,
             std::bind(&AruWaypoint::aru_sys_id, this,_1));
     }
@@ -37,7 +37,7 @@ private:
     tf2_ros::TransformListener tf_listener_;
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pallet_pose_;
-    rclcpp::Subscription<aru_interfaces::msg::ArucoList>::SharedPtr aru_sub_;
+    rclcpp::Subscription<pzb_msgs::msg::ArucoList>::SharedPtr aru_sub_;
 
     geometry_msgs::msg::PoseStamped pose_stamped_msg_;
 
@@ -47,7 +47,7 @@ private:
     
     int nearest_id;
     
-    void aru_sys_id(const aru_interfaces::msg::ArucoList &msg){
+    void aru_sys_id(const pzb_msgs::msg::ArucoList &msg){
         rclcpp::Time now = this->get_clock()->now();
         if (tf_buffer_.canTransform("odom","aruco_center",now,rclcpp::Duration::from_seconds(0.001))) {
             if(msg.markers.size() > 1){

@@ -12,6 +12,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>robot_state_publisher</depend>
@@ -19,18 +21,16 @@
   <depend>tf2_ros_py</depend>
   <depend>python3-numpy</depend>
   <depend>python3-transforms3d</depend>
+  <depend>pzb_msgs</depend>
 
-  <build_depend>aruco_list</build_depend>
+  <!-- <build_depend>aruco_list</build_depend>
   <exec_depend>aruco_list</exec_depend>
 
   <build_depend>aruco_marker</build_depend>
-  <exec_depend>aruco_marker</exec_depend>
+  <exec_depend>aruco_marker</exec_depend> -->
  
   <exec_depend>tf2</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
-
-  <depend>rclcpp</depend>
-  <depend>rclpy</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
