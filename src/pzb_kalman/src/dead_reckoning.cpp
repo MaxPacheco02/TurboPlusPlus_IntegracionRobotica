@@ -45,14 +45,14 @@ public:
         ns_ = this->get_namespace();
 
         l_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-            "w_l", 10,
+            "/VelocityEncL", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
             [this](const std_msgs::msg::Float32 &msg){
                 w1 = msg.data;
                 update_xid_params_ws();
             });
 
         r_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-            "w_r", 10,
+            "/VelocityEncR", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
             [this](const std_msgs::msg::Float32 &msg){
                 w2 = msg.data;
                 update_xid_params_ws();
@@ -65,8 +65,7 @@ public:
 
         odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
-        update_timer_ =
-            this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
+        update_timer_ = this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
 
         miu_hat << 0, 0, 0;
         miu_hat_dot << 0, 0, 0;
@@ -121,7 +120,7 @@ public:
 private:
 
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr l_enc_sub_, r_enc_sub_;
-        rclcpp::Subscription<pzb_msgs::msg::ArucoList>::SharedPtr aru_sub_;
+    rclcpp::Subscription<pzb_msgs::msg::ArucoList>::SharedPtr aru_sub_;
 
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
 
@@ -172,6 +171,8 @@ private:
         // Make theta [-pi, pi]
         miu_hat(2) = std::fmod(miu_hat(2) + M_PI, 2*M_PI) - M_PI;
 
+        std::cout << "miu_hat: " << miu_hat << "\n" <<std::endl;
+
         //kalman local start
         H_k(0,2) = -(dt * miu_hat_dot(1));
         H_k(1,2) = dt * miu_hat_dot(0);
@@ -200,6 +201,8 @@ private:
             miu_k = miu_hat;
             sigma_k = sigma_hat;
         }
+
+        std::cout << "miu_k: " << miu_k << "\n" <<std::endl;
 
         // Set and publish ROS msgs
         quat.setRPY(0, 0, miu_k(2));
@@ -260,15 +263,18 @@ private:
             nearest_id = msg.markers[1].id;
 
             double alpha = atan2(pos_axis(1),pos_axis(0));
+
+            alpha = std::fmod(alpha + M_PI, 2*M_PI) - M_PI;
+
             z_k << std::hypot(pos_axis(0), pos_axis(1)), alpha;
 
         }else{
             nearest_id = -2;
         }
         // rclcpp::Time now = this->get_clock()->now();
-        // if (tf_buffer_.canTransform("base_axis","aruco_center",now,rclcpp::Duration::from_seconds(0.00001))) {
+        // if (tf_buffer_.canTransform("pzb/base_axis","aruco_center",now,rclcpp::Duration::from_seconds(0.00001))) {
         //     if(msg.markers.size() > 1){
-        //         tf_aru = tf_buffer_.lookupTransform("base_axis","aruco_center",now);
+        //         tf_aru = tf_buffer_.lookupTransform("pzb/base_axis","aruco_center",now);
         //         nearest_id = msg.markers[1].id;
         //         double alpha = atan2(tf_aru.transform.translation.y,tf_aru.transform.translation.x);
         //         z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), alpha;
@@ -311,8 +317,8 @@ private:
         K_k = sigma_hat * G_k.transpose() * Z_k.ldlt().solve(I_2); //9
         miu_k = miu_hat + K_k * (z_k - z_hat); //10
         miu_k(2) = std::fmod(miu_k(2) + M_PI, 2*M_PI) - M_PI;
-        std::cout << "z_k: " << z_k << "\n" <<std::endl;
-        std::cout << "z_hat: " << z_hat << "\n" <<std::endl;
+        // std::cout << "z_k: " << z_k << "\n" <<std::endl;
+        // std::cout << "z_hat: " << z_hat << "\n" <<std::endl;
         sigma_k = (I - K_k * G_k) * sigma_hat; //11
     }
 };
