@@ -31,6 +31,7 @@ def generate_launch_description():
         package="pzb_description",
         executable="pzb_tf2_publisher",
         namespace=LaunchConfiguration('ns_'),
+        output="screen",
     )
 
     path_urdf = os.path.join(get_package_share_directory("pzb_description"), "urdf/", "pzb.urdf.xacro")

@@ -64,7 +64,6 @@ public:
 
 
         odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
-
         update_timer_ = this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
 
         miu_hat << 0, 0, 0;

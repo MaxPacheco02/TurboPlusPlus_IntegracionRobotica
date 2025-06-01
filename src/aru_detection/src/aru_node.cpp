@@ -107,11 +107,13 @@ private:
                 cv::Rodrigues(rvec, aruORI_);
                 cv::cv2eigen(aruORI_, aruORI_eigen);
                 aruPOS_ = Eigen::Vector3f(tvec[0], tvec[1], tvec[2]);
-                pubPosArray(id);
-                if(id == 7){ //FOR PALLETS
+                
+                if(id != 0){ // FOR LOCALIZATION
+                    pubPosArray(id);
+                }else{ //FOR PALLETS
                     pubPosPallet();
-                }
-            } 
+                } 
+            }       
             else {
                 aruId_.clear();
             }

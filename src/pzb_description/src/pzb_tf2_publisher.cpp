@@ -22,7 +22,7 @@ public:
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/mcl/odom", 10,
+        "/odom", 10,
         std::bind(&FramePublisher::handle_pzb_pose, this, std::placeholders::_1));
 
     pose_path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
@@ -31,12 +31,14 @@ public:
     pose_stamped_tmp_.header.frame_id = "odom";
     pose_path.header.frame_id = "odom";
     pose_path.header.stamp = FramePublisher::now();
+    std::cout<<"afuera"<<std::endl;
   }
 
 private:
   void handle_pzb_pose(const std::shared_ptr<nav_msgs::msg::Odometry> msg)
   {
 
+    std::cout<<"adentro"<<std::endl;
     // Update TF2 msg
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
