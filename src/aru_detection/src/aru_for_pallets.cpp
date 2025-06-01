@@ -11,24 +11,21 @@
 #include "opencv2/core/eigen.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
-#include "aru_interfaces/msg/aruco_list.hpp"  
-
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
 class AruWaypoint : public rclcpp::Node {
     
 public:
-    AruWaypoint() : Node("ObjPos"){
+    AruWaypoint() : Node("ObjPos"), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_){
         RCLCPP_INFO(this->get_logger(), "DETECCION DE CAJAS");
 
         using namespace std::placeholders;
         
-        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/pzb/palway", 10);
+        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/pzb/pallet_pos", 10);
 
-        aru_sub_ = this->create_subscription<aru_interfaces::msg::ArucoList>(
-            "pzb/aru_sys", 10,
-            std::bind(&AruWaypoint::aru_sys_id, this,_1));
+        quat_rot.setRPY(0.0,M_PI,0.0);
+        pose_stamped_msg_.header.frame_id = "odom";
     }
 
 private:
@@ -37,27 +34,37 @@ private:
     tf2_ros::TransformListener tf_listener_;
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pallet_pose_;
-    rclcpp::Subscription<aru_interfaces::msg::ArucoList>::SharedPtr aru_sub_;
 
     geometry_msgs::msg::PoseStamped pose_stamped_msg_;
 
-    tf2_ros::Buffer tf_buffer_;
-    tf2_ros::TransformListener tf_listener_;
+    tf2::Quaternion quat_rot;
+    tf2::Quaternion quat;
+
     geometry_msgs::msg::TransformStamped tf_aru;
     
     int nearest_id;
     
-    void aru_sys_id(const aru_interfaces::msg::ArucoList &msg){
-        rclcpp::Time now = this->get_clock()->now();
-        if (tf_buffer_.canTransform("odom","aruco_center",now,rclcpp::Duration::from_seconds(0.001))) {
-            if(msg.markers.size() > 1){
-                tf_aru = tf_buffer_.lookupTransform("odom","aruco_center",now);
-                nearest_id = msg.markers[1].id;
-                double alpha = atan2(tf_aru.transform.translation.y,tf_aru.transform.translation.x);
-                z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), alpha;
-            }else{
-                nearest_id = -2;
-            }
+    void pallet_sys_id(const geometry_msgs::msg::PoseStamped &msg){
+        if (tf_buffer_.canTransform("odom","pallet_aru",this->get_clock()->now(),rclcpp::Duration::from_seconds(0.001))) {
+            tf_aru = tf_buffer_.lookupTransform("odom","pallet_aru",this->get_clock()->now());   
+            pose_stamped_msg_.pose.position.x = msg.pose.position.x;
+            pose_stamped_msg_.pose.position.y = msg.pose.position.y;
+            pose_stamped_msg_.pose.position.z = msg.pose.position.z;
+
+            quat = tf2::Quaternion(msg.pose.orientation.x, 
+                                   msg.pose.orientation.y,     
+                                   msg.pose.orientation.z,     
+                                   msg.pose.orientation.w);
+
+            tf2::Quaternion quat_res = quat_rot * quat;
+            quat_res.normalize();
+
+            pose_stamped_msg_.pose.orientation.x = quat_res.x();
+            pose_stamped_msg_.pose.orientation.y = quat_res.y();
+            pose_stamped_msg_.pose.orientation.z = quat_res.z();
+            pose_stamped_msg_.pose.orientation.w = quat_res.w();
+
+            pallet_pose_->publish(pose_stamped_msg_);
         }
     }
 };

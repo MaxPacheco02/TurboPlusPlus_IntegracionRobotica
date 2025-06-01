@@ -19,7 +19,7 @@ find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(aru_interfaces REQUIRED)
+find_package(pzb_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 
 set(DEPENDENCIES
@@ -32,7 +32,7 @@ set(DEPENDENCIES
   tf2_ros
   Eigen3
   tf2_geometry_msgs
-  aru_interfaces
+  pzb_msgs
   OpenCV
 )
 

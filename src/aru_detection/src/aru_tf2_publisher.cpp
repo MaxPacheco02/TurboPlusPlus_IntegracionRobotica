@@ -10,7 +10,7 @@
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "tf2_ros/transform_broadcaster.h"
 
-#include "aru_interfaces/msg/aruco_list.hpp"
+#include "pzb_msgs/msg/aruco_list.hpp"
 
 class AruPublisher : public rclcpp::Node {
 public:
@@ -55,14 +55,19 @@ public:
 
 
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-        aru_sub_ = this->create_subscription<aru_interfaces::msg::ArucoList>(
+        aru_sub_ = this->create_subscription<pzb_msgs::msg::ArucoList>(
           "pzb/aru_sys",10,
           std::bind(&AruPublisher::handle_aru_sys, this, _1));
+        pallet_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+          "pzb/pallet_pos",10,
+          std::bind(&AruPublisher::handle_pallet_sys, this, _1));
 
-        t_cam.header.frame_id = "base_link";
+        t_cam.header.frame_id = "pzb/base_link";
         t_cam.child_frame_id = "camera";
         t_aru.header.frame_id = "camera";
         t_aru.child_frame_id = "aruco_center";
+        t_pal.header.frame_id = "camera";
+        t_pal.child_frame_id = "pallet_aru";
     }
 
 private:
@@ -72,10 +77,12 @@ private:
     tf2::Quaternion q;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-    rclcpp::Subscription<aru_interfaces::msg::ArucoList>::SharedPtr aru_sub_;
+    rclcpp::Subscription<pzb_msgs::msg::ArucoList>::SharedPtr aru_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pallet_sub_;
 
     geometry_msgs::msg::TransformStamped t_cam;
     geometry_msgs::msg::TransformStamped t_aru;
+    geometry_msgs::msg::TransformStamped t_pal;
     
 
     void declare_marker_params(const std::string& id) {
@@ -83,7 +90,7 @@ private:
         this->declare_parameter<double>(id + ".yaw");
     }
 
-    void handle_aru_sys(const std::shared_ptr<aru_interfaces::msg::ArucoList> msg){
+    void handle_aru_sys(const std::shared_ptr<pzb_msgs::msg::ArucoList> msg){
         // ARU SYSTEM BROADCAST
         // BASE -> CAMERA 
         t_cam.header.stamp = this->get_clock()->now();
@@ -100,6 +107,7 @@ private:
         tf_broadcaster_->sendTransform(t_cam); 
 
         t_aru.header.stamp = this->get_clock()->now();
+
         // REF -> ARUCO CENTER
         // ARUCO CENTER SIEMPRE EL MAS CERCANO AL PZB
         if(msg->markers.size() > 1){
@@ -122,6 +130,18 @@ private:
             t_aru.transform.rotation.z = 0.0;
         }
         tf_broadcaster_->sendTransform(t_aru);
+    }
+
+    void handle_pallet_sys(const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg){
+        t_pal.header.stamp = this->get_clock()->now();
+        t_pal.transform.translation.x = msg->pose.position.x;
+        t_pal.transform.translation.y = msg->pose.position.y;
+        t_pal.transform.translation.z = msg->pose.position.z;
+        t_pal.transform.rotation.w = msg->pose.orientation.w;
+        t_pal.transform.rotation.x = msg->pose.orientation.x;
+        t_pal.transform.rotation.y = msg->pose.orientation.y;
+        t_pal.transform.rotation.z = msg->pose.orientation.z;
+        tf_broadcaster_->sendTransform(t_pal);
     }
 };
 

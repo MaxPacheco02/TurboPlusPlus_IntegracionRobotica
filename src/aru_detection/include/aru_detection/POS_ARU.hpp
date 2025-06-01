@@ -1,5 +1,3 @@
-#pragma once
-
 #include <deque>
 #include <unordered_map>
 #include <vector>
@@ -12,13 +10,24 @@ public:
     ARU() {
         aru_ROT_ = cv::Mat::zeros(3, 1, CV_64F);
         aru_TRAN_ = cv::Mat::zeros(3, 1, CV_64F);
-        markerLength_ = 101.0;
+        
+        // LOCAL MARKER SIZE
+        markerLength_local_ = 95.0;
 
-        objp_ = (cv::Mat_<float>(4,3) <<
-            -markerLength_/2,  markerLength_/2, 0,
-             markerLength_/2,  markerLength_/2, 0,
-             markerLength_/2, -markerLength_/2, 0,
-            -markerLength_/2, -markerLength_/2, 0);
+        // PALLET MARKER SIZE 
+        markerLength_pal_ = 30.0;
+
+        objp_local_ = (cv::Mat_<float>(4,3) <<
+            -markerLength_local_/2,  markerLength_local_/2, 0,
+             markerLength_local_/2,  markerLength_local_/2, 0,
+             markerLength_local_/2, -markerLength_local_/2, 0,
+            -markerLength_local_/2, -markerLength_local_/2, 0);
+
+        objp_pal_ = (cv::Mat_<float>(4,3) <<
+            -markerLength_pal_/2,  markerLength_pal_/2, 0,
+             markerLength_pal_/2,  markerLength_pal_/2, 0,
+             markerLength_pal_/2, -markerLength_pal_/2, 0,
+            -markerLength_pal_/2, -markerLength_pal_/2, 0);
     }
 
     void detectorSetup() {
@@ -46,7 +55,12 @@ public:
                 
                 if (aruSeen_[marker_id].size() > 1 && std::all_of(aruSeen_[marker_id].begin(), aruSeen_[marker_id].end(), [](bool v){ return v; })) {
                     cv::Vec3d rvec, tvec;
-                    cv::solvePnP(objp_, corners[i], camMatrix, distCoeffs, rvec, tvec);
+                    
+                    if(marker_id == 0){
+                        cv::solvePnP(objp_pal_, corners[i], camMatrix, distCoeffs, rvec, tvec);
+                    }else{
+                        cv::solvePnP(objp_local_, corners[i], camMatrix, distCoeffs, rvec, tvec);   
+                    }
 
                     cv::aruco::drawDetectedMarkers(frame, corners, ids);
                     cv::drawFrameAxes(frame, camMatrix, distCoeffs, rvec, tvec, 20.0);
@@ -67,8 +81,8 @@ public:
     }
 
     cv::Mat aru_ROT_, aru_TRAN_;
-    double markerLength_;
-    cv::Mat objp_;
+    double markerLength_local_, markerLength_pal_;
+    cv::Mat objp_local_, objp_pal_;
 
 private:
     std::unique_ptr<cv::aruco::ArucoDetector> detector_;

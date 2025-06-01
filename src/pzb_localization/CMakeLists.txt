@@ -92,16 +92,15 @@ target_link_libraries(mcl_node
   CUDA::cudart
 )
 
-add_executable(dead_reckoning src/dead_reckoning.cpp)
-ament_target_dependencies(dead_reckoning ${DEPENDENCIES})
+# add_executable(dead_reckoning src/dead_reckoning.cpp)
+# ament_target_dependencies(dead_reckoning ${DEPENDENCIES})
 
 add_executable(laser_preprocess src/laser_preprocess.cpp)
 ament_target_dependencies(laser_preprocess ${DEPENDENCIES})
 
 # Install targets
-install(TARGETS
+install(TARGETS   # dead_reckoning
   mcl_node
-  dead_reckoning
   laser_preprocess
   DESTINATION lib/${PROJECT_NAME}
 )

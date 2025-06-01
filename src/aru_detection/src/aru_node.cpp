@@ -10,8 +10,8 @@
 #include "opencv2/aruco.hpp"
 #include "opencv2/core/eigen.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "aru_interfaces/msg/aruco_marker.hpp"
-#include "aru_interfaces/msg/aruco_list.hpp"
+#include "pzb_msgs/msg/aruco_marker.hpp"
+#include "pzb_msgs/msg/aruco_list.hpp"
 
 #include "sensor_msgs/msg/compressed_image.hpp"
 
@@ -30,7 +30,7 @@ public:
         "/signal_frame", 10,
         std::bind(&ObjPos::show, this, _1));
 
-        pos_pub_ = this->create_publisher<aru_interfaces::msg::ArucoList>("/pzb/aru_sys", 10);
+        pos_pub_ = this->create_publisher<pzb_msgs::msg::ArucoList>("/pzb/aru_sys", 10);
         aruList_msg_.markers.reserve(20);
         
         pallet_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/pzb/pallet_pos", 10);
@@ -57,10 +57,10 @@ public:
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr image_sub_; 
-    rclcpp::Publisher<aru_interfaces::msg::ArucoList>::SharedPtr pos_pub_;
+    rclcpp::Publisher<pzb_msgs::msg::ArucoList>::SharedPtr pos_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pallet_pub_;
-    aru_interfaces::msg::ArucoList aruList_msg_;
-    aru_interfaces::msg::ArucoMarker poseW_;
+    pzb_msgs::msg::ArucoList aruList_msg_;
+    pzb_msgs::msg::ArucoMarker poseW_;
 
     geometry_msgs::msg::PoseStamped pose_stamped_msg_;
 
@@ -86,7 +86,7 @@ private:
     cv::Mat undistFrame;
     cv::Mat cropped;
 
-    aru_interfaces::msg::ArucoMarker marker;
+    pzb_msgs::msg::ArucoMarker marker;
 
     // MAIN LOOP
     void show(const sensor_msgs::msg::CompressedImage::SharedPtr msg) {
@@ -107,11 +107,13 @@ private:
                 cv::Rodrigues(rvec, aruORI_);
                 cv::cv2eigen(aruORI_, aruORI_eigen);
                 aruPOS_ = Eigen::Vector3f(tvec[0], tvec[1], tvec[2]);
-                pubPosArray(id);
-                if(id == 7){ //FOR PALLETS
+                
+                if(id != 0){ // FOR LOCALIZATION
+                    pubPosArray(id);
+                }else{ //FOR PALLETS
                     pubPosPallet();
-                }
-            } 
+                } 
+            }       
             else {
                 aruId_.clear();
             }
@@ -128,7 +130,7 @@ private:
         auto now = this->get_clock()->now();
         aruList_msg_.header.stamp = now;
 
-        // aru_interfaces::msg::ArucoMarker marker;
+        // pzb_msgs::msg::ArucoMarker marker;
         marker.id = id;
 
         if(aruId_.find(id) == aruId_.end()) {
