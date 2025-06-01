@@ -33,7 +33,7 @@ public:
         pos_pub_ = this->create_publisher<pzb_msgs::msg::ArucoList>("/pzb/aru_sys", 10);
         aruList_msg_.markers.reserve(20);
         
-        pallet_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/pzb/pallet_pos", 10);
+        pallet_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pzb/pallet_pos", 10);
 
         aru_.detectorSetup();
 
@@ -51,6 +51,8 @@ public:
 
         aruList_msg_.header.frame_id = "camera";
         pose_stamped_msg_.header.frame_id = "camera";
+
+        nearest_pallet = true;
         
         calCamSys();
     }
@@ -88,6 +90,8 @@ private:
 
     pzb_msgs::msg::ArucoMarker marker;
 
+    bool nearest_pallet; 
+
     // MAIN LOOP
     void show(const sensor_msgs::msg::CompressedImage::SharedPtr msg) {
         cv::Mat compressed_mat(msg->data); 
@@ -103,6 +107,7 @@ private:
         for (int i = 0; i < detections.size(); i++) {
             auto &[rvec, tvec, id] = detections[i];
             std::cout<< "tvec : " << tvec <<std::endl;
+            std::cout<< "id : " << id <<std::endl;
             if (id != -1) {
                 cv::Rodrigues(rvec, aruORI_);
                 cv::cv2eigen(aruORI_, aruORI_eigen);
@@ -118,6 +123,7 @@ private:
                 aruId_.clear();
             }
         }
+        nearest_pallet = true;
 
         pos_pub_->publish(aruList_msg_);
         aruList_msg_.markers.erase(aruList_msg_.markers.begin() + 1, aruList_msg_.markers.end());

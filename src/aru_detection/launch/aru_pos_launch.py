@@ -27,7 +27,11 @@ def generate_launch_description():
         output='screen', 
     )
 
+    aru_for_pallets = Node(
+        package='aru_detection',
+        executable='aru_for_pallets',
+    )
 
     # obj_pos_node, aru_way_node, 
-    return LaunchDescription([obj_pos_node, aru_tf2_publisher])
+    return LaunchDescription([obj_pos_node, aru_tf2_publisher, aru_for_pallets])
 
