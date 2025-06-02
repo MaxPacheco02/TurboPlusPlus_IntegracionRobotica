@@ -49,7 +49,7 @@ public:
         detector_->detectMarkers(gray, corners, ids);
 
         if (!corners.empty()) {
-            for (int i = 0; i < ids.size(); i++) {
+            for (int i = 0; i < (int)ids.size(); i++) {
                 int marker_id = ids[i];
                 aruSeen_[marker_id].push_back(true);
                 
