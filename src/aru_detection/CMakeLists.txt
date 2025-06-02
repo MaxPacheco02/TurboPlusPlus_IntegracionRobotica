@@ -50,12 +50,18 @@ include_directories(include)
 add_executable(aru_exe src/aru_node.cpp)
 ament_target_dependencies(aru_exe ${DEPENDENCIES})
 
+add_executable(aru_for_pallets src/aru_for_pallets.cpp)
+ament_target_dependencies(aru_for_pallets ${DEPENDENCIES})
+
 add_executable(aru_tf2_exe src/aru_tf2_publisher.cpp)
 ament_target_dependencies(aru_tf2_exe ${DEPENDENCIES})
 
 # # INSTALL CPP EXECS
-install(TARGETS aru_exe DESTINATION lib/${PROJECT_NAME})
-install(TARGETS aru_tf2_exe DESTINATION lib/${PROJECT_NAME})
+install(TARGETS 
+  aru_exe 
+  aru_tf2_exe
+  aru_for_pallets
+  DESTINATION lib/${PROJECT_NAME})
 
 #---------------------------------------------------------------------------
 
@@ -70,10 +76,10 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY 
-  resources/
-  DESTINATION share/${PROJECT_NAME}/resources
-)
+# install(DIRECTORY 
+#   resources/
+#   DESTINATION share/${PROJECT_NAME}/resources
+# )
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

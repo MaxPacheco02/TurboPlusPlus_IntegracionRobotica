@@ -28,6 +28,9 @@
 
 #include "tf2/utils.h"
 
+#include "pzb_msgs/msg/lift_state.hpp"
+#include "pzb_msgs/srv/lift_service.hpp"
+
 using namespace std::chrono_literals;
 
 class MasterNode : public rclcpp::Node
@@ -36,14 +39,12 @@ public:
     MasterNode() : Node("state_machine"){
         using namespace std::placeholders;
 
-        lift_sub_ = this->create_subscription<int>("/lift_state",10,
-            [this](const int &msg){
-                if(msg == 0){
-                    loaded_lift = false;
-                }else{
-                    loaded_lift = true;
-                }
+        lift_sub_ = this->create_subscription<pzb_msgs::msg::LiftState>("/lift_state",10,
+            [this](const pzb_msgs::msg::LiftState &msg){
+
             });
+         
+        lift_client_ = this->create_client<pzb_msgs::srv::LiftService>("lift_service");
 
         pallet_sub_ = this->crceate_subscription<geometry_msgs::msg::PoseStamped>(
             "/pzb/pallet_pos",10,
@@ -52,13 +53,12 @@ public:
                 last_pallet_update_ = this->get_clock()->now();
                 pallet_detected = true;
             });
-        
-        // trailer_sub_ = this->create_subscription<>();
-        
+            
+        // trailer_sub_ = this->create_subscription<>();        
             
         update_timer_ = this->create_wall_timer(10ms, std::bind(&MasterNode::state_switch, this));
         
-        state = "feature_search";
+        state = "pallet_search";
         loaded_lift = false;
         pallet_detected = false;
         trailer_detected = false;
@@ -68,7 +68,9 @@ public:
 
 private:
     
-    rclcpp::Subscription<int>::SharedPtr lift_sub_;
+    rclcpp::Subscription<pzb_msgs::msg::LiftState>::SharedPtr lift_sub_;
+    rclcpp::Client<pzb_msgs::srv::LiftService>::SharedPtr lift_client_;
+
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pallet_sub_;
     // rclcpp::Subscription<>::SharedPtr trailer_sub_;
     rclcpp::TimerBase::SharedPtr update_timer_;
@@ -79,59 +81,55 @@ private:
 
     std::string state;
 
-
     rclcpp::Time last_pallet_update_;
 
     // MAQUINA DE TRES ESTADOS
     void state_switch(){
         
-        // switch(state){
-        //     case "feature search":
-        //         if(pallet_detected && !loaded_lift){
-        //             pallet_collection();
-        //             state = "pallet_collection";
-        //         }else{
-        //             feature_search();
-        //         }
-        //     case "pallet_collection":
-        //         if(loaded_lift){
-        //             featur_search();
-        //         }else{
-        //             pallet_collection();
-        //         }
-        //     case "pallet_delivery":
-        // }
-
-        switch(loaded_lift){
-            case false:
-                if(pallet_detected){
+        switch(state){
+            case "pallet_search":
+                if(pallet_detected && !loaded_lift){
                     pallet_collection();
+                    state = "pallet_collection";
                 }else{
-                    feature_search();
+                    pallet_search();
                 }
-                return;
-            case true:
-                if(trailer_detected){
+            case "pallet_collection":
+                if(loaded_lift){
+                    trailer_search();
+                }else{
+                    pallet_collection();
+                }
+            case "trailer_search":
+                if (trailer_detected && loaded_lift){
                     pallet_delivery();
                 }else{
-                    frature_search();
+                    trailer_search();
                 }
-                return;
-            default: 
-                pallet_detected = false;
+            case "pallet_delivery":
+                if(!loaded_lift){
+                    pallet_search();
+                }else{
+                    pallet_delivery();
+                }   
+            default:
+                pallet_search();
                 trailer_detected = false;
-                feature_search();
-                return;
+                pallet_detected = false;
+                loaded_lift = false;
         }
     }
 
-    void feature_search(){
-        if (this->get_clock()->now() - last_pallet_update_ > rclcpp::Duration(0, 100 * 1e6))
-            return;
+    void pallet_search(){
+        return;
     }
 
     void pallet_collection(){
         return; 
+    }
+
+    void trailer_search(){
+        return;
     }
 
     void pallet_delivery(){
@@ -147,3 +145,7 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
+
+
+// if (this->get_clock()->now() - last_pallet_update_ > rclcpp::Duration(0, 100 * 1e6))
+//     return;

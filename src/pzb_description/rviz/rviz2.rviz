@@ -100,6 +100,8 @@ Visualization Manager:
           Value: true
         odom:
           Value: true
+        pallet_aru:
+          Value: true
         pzb/base_axis:
           Value: true
         pzb/base_footprint:
@@ -264,56 +266,20 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /pzb/robot_description
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        laser:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_axis:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_footprint:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/caster_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/left_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/lidar_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/right_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
       Name: RobotModel
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Alpha: 0.699999988079071
       Class: rviz_default_plugins/Map
