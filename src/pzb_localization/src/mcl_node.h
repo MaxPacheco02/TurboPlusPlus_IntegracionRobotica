@@ -57,6 +57,9 @@ private:
         int num_rays,
         double max_range = 10.0);
 
+    void updateLidarAngleOffset();
+    double calculateAlignmentError();
+
     geometry_msgs::msg::PoseWithCovariance calculateMeanPose() const;
 
     // Node components
@@ -73,6 +76,17 @@ private:
     nav_msgs::msg::OccupancyGrid map_msg_;
     nav_msgs::msg::Odometry mcl_msg_;
     sensor_msgs::msg::PointCloud2 map_pc_msg_, local_map_pc_msg_;
+
+    double lidar_angle_offset_; // Calibration offset for lidar alignment
+    double angle_offset_rate_;  // Rate of change for the offset
+    double accumulated_turn_error_;
+    std::chrono::steady_clock::time_point last_offset_update_;
+
+    double findBestLidarAngleOffset();
+
+    // For adaptive offset calculation
+    std::vector<double> recent_angular_errors_;
+    static constexpr size_t MAX_ERROR_HISTORY = 20;
 
     // State tracking
     geometry_msgs::msg::Pose last_pose_, pose_;
