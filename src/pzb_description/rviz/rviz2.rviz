@@ -66,9 +66,41 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        aruco_center:
+          Value: true
+        camera:
+          Value: true
+        id1:
+          Value: true
+        id10:
+          Value: true
+        id11:
+          Value: true
+        id12:
+          Value: true
+        id13:
+          Value: true
+        id2:
+          Value: true
+        id3:
+          Value: true
+        id4:
+          Value: true
+        id5:
+          Value: true
+        id6:
+          Value: true
+        id7:
+          Value: true
+        id8:
+          Value: true
+        id9:
+          Value: true
         laser:
           Value: true
         odom:
+          Value: true
+        pallet_aru:
           Value: true
         pzb/base_axis:
           Value: true
@@ -85,13 +117,32 @@ Visualization Manager:
       Show Names: true
       Tree:
         odom:
-          pzb/base_axis:
-            laser:
-              {}
-            pzb/base_footprint:
-              pzb/base_link:
-                pzb/caster_link:
-                  {}
+          id1:
+            {}
+          id10:
+            {}
+          id11:
+            {}
+          id12:
+            {}
+          id13:
+            {}
+          id2:
+            {}
+          id3:
+            {}
+          id4:
+            {}
+          id5:
+            {}
+          id6:
+            {}
+          id7:
+            {}
+          id8:
+            {}
+          id9:
+            {}
       Update Interval: 0
       Value: true
     - Angle Tolerance: 0.009999999776482582
@@ -131,7 +182,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /pzb/odom
+        Value: /odom
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -206,56 +257,20 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /pzb/robot_description
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        laser:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_axis:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_footprint:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/base_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/caster_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        pzb/left_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/lidar_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        pzb/right_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
       Name: RobotModel
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Alpha: 0.699999988079071
       Class: rviz_default_plugins/Map
@@ -511,7 +526,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /pzb/goal_pose
+        Value: /goal_pose
       Value: true
     - Class: rviz_default_plugins/Image
       Enabled: false
@@ -569,7 +584,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /pzb/goal_pose
+        Value: /goal_pose
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:
@@ -594,11 +609,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 93.78457641601562
+      Scale: 807.5123291015625
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: -0.801981508731842
-      Y: 0.9739788174629211
+      X: 0.09434716403484344
+      Y: -0.060613494366407394
     Saved: ~
 Window Geometry:
   Displays:

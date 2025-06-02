@@ -115,6 +115,7 @@ private:
                 
                 if(id != 0){ // FOR LOCALIZATION
                     pubPosArray(id);
+                    pubPosPallet();
                 }else{ //FOR PALLETS
                     pubPosPallet();
                 } 
@@ -186,6 +187,7 @@ private:
     // PUBLISHER PARA ARUCO DE PALLET
     void pubPosPallet(){
         auto now = this->get_clock()->now();
+        std::cout<<"in"<<std::endl;
         pose_stamped_msg_.header.stamp = now;
         pose_stamped_msg_.pose.position.x = aruPOS_[0] * scale_;
         pose_stamped_msg_.pose.position.y = aruPOS_[1] * scale_;
