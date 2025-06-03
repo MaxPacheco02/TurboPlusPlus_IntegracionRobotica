@@ -50,7 +50,7 @@ public:
             });
 
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/pzb/cmd_vel", 10,
+            "/cmd_vel", 10,
             [this](const geometry_msgs::msg::Twist &msg){
                 cmd_vel_msg.linear.x = msg.linear.x * gz_factor;
                 cmd_vel_msg.angular.z = msg.angular.z * gz_factor;

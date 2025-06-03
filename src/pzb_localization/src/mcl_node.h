@@ -11,6 +11,7 @@
 #include "tf2/utils.hpp"
 #include "MCL.h"
 #include "map_utils.h"
+#include <limits>
 #include "robot_utils.h"
 
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -41,7 +42,8 @@ private:
     void laserCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void updateGridCell(double robot_x, double robot_y, double point_x, double point_y);
-    void updatePointCloudMap(const std::vector<Point>& new_points);
+    void updatePointCloudMap(const std::vector<Point> &new_points);
+    void updatePointCloudFromGrid();
 
     void expandMapIfNeeded(
         nav_msgs::msg::OccupancyGrid &map_msg,
@@ -54,6 +56,9 @@ private:
         const Point *ray_endpoints,
         int num_rays,
         double max_range = 10.0);
+
+    void updateLidarAngleOffset();
+    double calculateAlignmentError();
 
     geometry_msgs::msg::PoseWithCovariance calculateMeanPose() const;
 
@@ -71,6 +76,17 @@ private:
     nav_msgs::msg::OccupancyGrid map_msg_;
     nav_msgs::msg::Odometry mcl_msg_;
     sensor_msgs::msg::PointCloud2 map_pc_msg_, local_map_pc_msg_;
+
+    double lidar_angle_offset_; // Calibration offset for lidar alignment
+    double angle_offset_rate_;  // Rate of change for the offset
+    double accumulated_turn_error_;
+    std::chrono::steady_clock::time_point last_offset_update_;
+
+    double findBestLidarAngleOffset();
+
+    // For adaptive offset calculation
+    std::vector<double> recent_angular_errors_;
+    static constexpr size_t MAX_ERROR_HISTORY = 20;
 
     // State tracking
     geometry_msgs::msg::Pose last_pose_, pose_;
@@ -99,6 +115,9 @@ private:
     size_t local_map_size_;
     int local_map_N_;
     Point *local_map_;
+
+    double ang_vel_;
+    double laser_range_max_;
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub_;
     std::vector<double> filtered_ranges_;

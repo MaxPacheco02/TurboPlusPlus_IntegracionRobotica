@@ -3,8 +3,8 @@
 <package format="3">
   <name>pzb_localization</name>
   <version>0.0.0</version>
-  <description>Description package for the puzzlebot</description>
-  <maintainer email="demianmarin03@gmail.com">demian</maintainer>
+  <description>Localization package for the puzzlebot</description>
+  <maintainer email="maxprpxam@icloud.com">Max Pacheco</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -28,7 +28,6 @@
   <depend>pzb_msgs</depend>
   <depend>OpenCV</depend>
   <depend>cv_bridge</depend>
-  <depend>cvplot</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

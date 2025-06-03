@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+from rclpy.node import Node
+import cv2
+import glob
+import numpy as np
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
+# CLASE PARA NODO DE CALIBRACION DE CAMARA 
+
+class CalNode(Node):
+
+    def __init__(self):
+        super().__init__('ObjPos')
+        self.get_logger().info('NODO DE CALIBRACION')
+        # MATRICES Y VECTORES OBTENIDOS DE CALIBRACION DE CAMARA
+        self.CamMat = 0
+        self.CamMatN = 0
+        self.CamTra = 0
+        self.CamRot = 0
+        self.CamDis = 0
+        self.roi = 0
+
+        # PARA EL MUNDO
+        self.CamRotW = 0
+        self.CamTraW = 0
+
+        self.worldString = "frame_0150.png"
+
+        self.cameraCalibrate()
+
+
+    def cameraCalibrate(self):
+        # NUMERO DE ESQUINAS EN CHESSBOARD DE CALIBRACION
+        chessSize = (5,5)
+        # TAMAÑO DE CADA CUADRO EN MM
+        chessSq = 31
+        # TERMINATION CRITERIA
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+        # PUNTOS PARA PLANOS DE CALIBRACION
+        objp = np.zeros((chessSize[0]*chessSize[0],3), np.float32)
+        objp[:,:2] = np.mgrid[0:chessSize[0],0:chessSize[1]].T.reshape(-1,2)
+
+        # ------------------------------------------------------------------------------
+        #ACOMODAR PUNTOS PARA MANTENER REFERENCIAL SIN TENER QUE MODIFICAR SUS SIGNOS
+        for i in range(chessSize[0]-1,len(objp),chessSize[0]):
+            TEMP = objp[i-(chessSize[0]-1):i+1,:] 
+            objp[i-(chessSize[0]-1):i+1,:] = TEMP[::-1]
+            
+            #  | y               #
+            #  |                 #
+            #  |                 #
+            #  |                 #
+            #  |                 #
+            #  . z ___________x  #
+        # ------------------------------------------------------------------------------
+
+        # ASIGNAR MEDIDAS REALES A OBJP (MM)
+        objp = objp * chessSq
+
+        # ARREGLOS DE PUNTOS EN IMAGEN Y CORRESPONDENCIAS EN EL MUNDO
+        objpoints = [] # 3d 
+        imgpoints = [] # 2d
+
+        # OBTENER PATH DE DIRECTORIO DE FOTOS (EN DIRECTORIO SHARE DEL PAQUETE)
+        share_dir = get_package_share_directory('aru_detection')
+        chessboard_path = os.path.join(share_dir, 'resources')
+
+        # IMPORTAR IMAGENES PARA CALIBRACION
+        images = glob.glob(os.path.join(chessboard_path, '*.png'))
+
+        h = 0
+        w = 0 
+
+        count = 0
+        worldIndex = 0
+
+        for fname in images:
+            img = cv2.imread(fname)
+            
+            h,  w = img.shape[:2]
+
+            print("h: "+str(h)+" w: "+str(w))
+
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Find the chess board corners
+            ret, corners = cv2.findChessboardCorners(gray, chessSize, None)
+
+            # If found, add object points, image points (after refining them)
+            if ret == True:
+                objpoints.append(objp)
+                
+                corners2 = cv2.cornerSubPix(gray,corners, (11,11), (-1,-1), criteria)
+                imgpoints.append(corners2)
+
+                if(fname == (chessboard_path + self.worldString)):
+                    worldIndex = count
+                
+                count += 1
+                     
+                # Draw and display the corners (COMMENT)
+                cv2.drawChessboardCorners(img, chessSize, corners2, ret)
+                cv2.putText(img, fname[86:], (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+                cv2.imshow('Imagen', img)
+                cv2.waitKey(0)
+
+        cv2.destroyAllWindows()
+
+        #CALIBRACION DE CAMARA
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None, None)
+        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w,h), 1, (w,h))
+
+        self.CamMat = mtx
+        self.CamMatN = newcameramtx
+        self.CamDis = dist
+        self.CamRot = rvecs
+        self.CamTra = tvecs
+        self.roi = roi
+
+        self.CamRotW = rvecs[worldIndex]
+        self.CamTraW = tvecs[worldIndex]
+
+        print("count: "+str(count))
+
+        print('self.CamMatN:\n' + str(self.CamMatN) + '\n')
+        print('self.CamDis:\n' + str(self.CamDis) + '\n')
+        print('roi: \n'+ str(roi) + '\n')

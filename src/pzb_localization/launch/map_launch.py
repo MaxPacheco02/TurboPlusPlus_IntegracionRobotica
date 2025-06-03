@@ -16,7 +16,7 @@ def generate_launch_description():
     map_file_path = os.path.join(
         get_package_share_directory('pzb_localization'),
         'config',
-        'map.yaml'
+        'mymap.yaml'
     )
 
     map_server_cmd = Node(
@@ -25,7 +25,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'yaml_filename': map_file_path,
-            'topic_name': 'pzb/map',
+            'topic_name': 'map',
             'frame_id': 'odom',
             }])
 
