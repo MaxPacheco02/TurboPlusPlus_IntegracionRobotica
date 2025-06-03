@@ -113,6 +113,15 @@ public:
         G_k.setZero();
         K_k.setZero();
         //------------------------------------------------
+        
+        // PARA CALCULO DE z_k CON MATRICES HOMOGENEAS
+        quat_aru.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        Eigen::Quaternionf q_cam(quat_aru.w(), quat_aru.x(), quat_aru.y(), quat_aru.z());
+        Rc = q_cam.toRotationMatrix();
+
+        H_T_aru_axis = Eigen::Matrix4f::Identity();
+        H_T_aru_axis.block<3, 3>(0, 0) = Rc;
+        H_T_aru_axis.block<3, 1>(0, 3) << 0.056, 0.0, 0.153;
 
         odometry_msg.header.frame_id = "odom";
     }
@@ -128,6 +137,7 @@ private:
     nav_msgs::msg::Odometry odometry_msg;
 
     tf2::Quaternion quat;
+    tf2::Quaternion quat_aru;
 
     std::string ns_;
 
@@ -154,13 +164,15 @@ private:
     Eigen::Matrix<float, 2, 3> G_k;
     Eigen::Matrix<float, 3, 2> K_k, h_w, delta_w;
 
+    Eigen::Matrix3f Rc;
+    Eigen::Matrix4f H_T_aru_axis;
+    Eigen::Vector4f pos_aru, pos_axis;
+
     int nearest_id;
     //------------------------------------------------
 
     void update()
     {
-        // RCLCPP_ERROR(get_logger(), "%f,%f,%f - %f, %f", xi(0),xi(1),xi(2), twist_x, twist_z);
-
         miu_hat_dot << twist_x * cos(miu_k(2)),
             twist_x * sin(miu_k(2)),
             twist_z;
@@ -240,34 +252,15 @@ private:
         twist_z = (r / (2 * l)) * (w2 - w1);
     }
 
-    // -------------------------------------------------------------------------------------------------------------------------
     void aru_sys_id(const pzb_msgs::msg::ArucoList &msg)
     {
         if (msg.markers.size() > 1)
         {
-            // CALCULO DE z_k CON MATRICES HOMOGENEAS
-            tf2::Quaternion quat;
-            quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
-            Eigen::Quaternionf q_cam(quat.w(), quat.x(), quat.y(), quat.z());
-            Eigen::Matrix3f Rc = q_cam.toRotationMatrix();
-
-            Eigen::Matrix4f H_T_base = Eigen::Matrix4f::Identity();
-            H_T_base.block<3, 3>(0, 0) = Rc;
-            H_T_base.block<3, 1>(0, 3) << 0.108, 0.0, 0.044;
-
-            Eigen::Matrix4f H_T_axis = Eigen::Matrix4f::Identity();
-            H_T_axis.block<3, 3>(0, 0) = Eigen::Matrix3f::Identity();
-            H_T_axis.block<3, 1>(0, 3) << -0.052, 0.0, 0.049;
-
-            Eigen::Matrix4f H_T_aru_axis = H_T_axis * H_T_base;
-
-            Eigen::Vector4f pos_aru;
             pos_aru << msg.markers[1].pose.position.x,
                 msg.markers[1].pose.position.y,
                 msg.markers[1].pose.position.z,
                 1.0;
-
-            Eigen::Vector4f pos_axis = H_T_aru_axis * pos_aru;
+            pos_axis = H_T_aru_axis * pos_aru;
             nearest_id = msg.markers[1].id;
 
             double alpha = atan2(pos_axis(1), pos_axis(0));
@@ -280,17 +273,6 @@ private:
         {
             nearest_id = -2;
         }
-        // rclcpp::Time now = this->get_clock()->now();
-        // if (tf_buffer_.canTransform("pzb/base_axis","aruco_center",now,rclcpp::Duration::from_seconds(0.00001))) {
-        //     if(msg.markers.size() > 1){
-        //         tf_aru = tf_buffer_.lookupTransform("pzb/base_axis","aruco_center",now);
-        //         nearest_id = msg.markers[1].id;
-        //         double alpha = atan2(tf_aru.transform.translation.y,tf_aru.transform.translation.x);
-        //         z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), alpha;
-        //     }else{
-        //         nearest_id = -2;
-        //     }
-        // }
     }
 
     void calc_zHat(double m_x_i, double m_y_i)
@@ -331,8 +313,6 @@ private:
         z_diff(1) = normalize_angle(z_diff(1));
         miu_k = miu_hat + K_k * z_diff; //10
         miu_k(2) = normalize_angle(miu_k(2));
-        // std::cout << "z_k: " << z_k << "\n" <<std::endl;
-        // std::cout << "z_hat: " << z_hat << "\n" <<std::endl;
         sigma_k = (I - K_k * G_k) * sigma_hat; // 11
     }
 
