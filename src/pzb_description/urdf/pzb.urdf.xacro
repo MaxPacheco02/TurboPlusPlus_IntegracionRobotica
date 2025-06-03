@@ -27,16 +27,16 @@
   <color rgba="1 0 0 0 0.1"/>
 </material>
 
-<link name="${ns}/base_footprint">
+<link name="base_footprint">
 </link>
 
 <link name="laser">
 </link>
 
-<link name="${ns}/base_axis">
+<link name="base_axis">
 </link>
 
-<link name="${ns}/base_link">
+<link name="base_link">
     <visual>
       <geometry>
         <mesh filename="package://pzb_description/models/pzb/meshes/pzb_lidarless.dae" scale="1 1 1"/>
@@ -45,7 +45,7 @@
     </visual>
 </link>
 
-<link name="${ns}/lidar_link">
+<link name="lidar_link">
     <visual>
       <geometry>
         <mesh filename="package://pzb_description/models/pzb/meshes/lidar_cap.dae" scale="1 1 1"/>
@@ -55,32 +55,32 @@
 </link>
 
 <joint name="laser_pointcloud_joint" type="fixed"> 
-  <parent link="${ns}/base_axis"/>
+  <parent link="base_axis"/>
   <child link="laser"/>
   <origin xyz="0 0 0" rpy="0 0 0"/>
 </joint>
 
 <joint name="axis_footprint_joint" type="fixed"> 
-  <parent link="${ns}/base_axis"/>
-  <child link="${ns}/base_footprint"/>
+  <parent link="base_axis"/>
+  <child link="base_footprint"/>
   <origin xyz="-0.052 0 0" rpy="0 0 0"/>
 </joint>
 
 <joint name="base_link_joint" type="fixed"> 
-  <parent link="${ns}/base_footprint"/>
-  <child link="${ns}/base_link"/>
+  <parent link="base_footprint"/>
+  <child link="base_link"/>
   <origin xyz="0 0 ${off_ground}" rpy="0 0 0"/>
 </joint>
 
 <joint name="lidar_joint" type="continuous"> 
   <axis xyz="0.0 0.0 1" rpy="0 0 0" />
-  <parent link="${ns}/base_link"/>
-  <child link="${ns}/lidar_link"/>
+  <parent link="base_link"/>
+  <child link="lidar_link"/>
   <origin xyz="0.052 0 0.105" rpy="0 0 0"/>
 </joint>
 
 <xacro:macro name="wheel" params="ns prefix reflect">
-  <link name="${ns}/${prefix}_wheel">
+  <link name="${prefix}_wheel">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
@@ -91,8 +91,8 @@
   </link>
   <joint name="${prefix}_wheel_joint" type="continuous">
     <axis xyz="0.0 0.0 1" rpy="0 0 0" />
-    <parent link="${ns}/base_link"/>
-    <child link="${ns}/${prefix}_wheel"/>
+    <parent link="base_link"/>
+    <child link="${prefix}_wheel"/>
     <origin xyz="0.052 ${reflect*-0.095} ${0.0025*reflect}" rpy="${-reflect*pi/2} 0 0" />
   </joint>
 </xacro:macro>
@@ -102,12 +102,12 @@
 
 <joint name="caster_joint" type="fixed">
   <axis xyz="0 0 0" rpy="0 0 0" />
-  <parent link="${ns}/base_link"/>
-  <child link="${ns}/caster_link"/>
+  <parent link="base_link"/>
+  <child link="caster_link"/>
   <origin xyz="-${b_length*0.3} 0 ${-caster_height}" rpy="0 0 0"/>
 </joint>
 
-<link name="${ns}/caster_link">
+<link name="caster_link">
     <!-- <visual>
       <geometry>
         <mesh filename="package://pzb_description/models/pzb/meshes/Puzzlebot_Caster_Wheel.stl" scale="1 1 1"/>

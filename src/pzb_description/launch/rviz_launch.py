@@ -17,7 +17,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
     
 def generate_launch_description():
-    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
+    ns_arg = DeclareLaunchArgument('ns_', default_value='')
     
     rviz_config = os.path.join(get_package_share_directory("pzb_description"),"rviz/","rviz2.rviz")
 

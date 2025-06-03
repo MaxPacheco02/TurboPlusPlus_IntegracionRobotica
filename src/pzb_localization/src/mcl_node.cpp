@@ -246,7 +246,7 @@ void MCLNode::initializePublishersAndSubscribers()
         std::bind(&MCLNode::estimateCallback, this, std::placeholders::_1));
 
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "pzb/map", 10,
+        "map", 10,
         std::bind(&MCLNode::mapCallback, this, std::placeholders::_1));
 
     laser_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(

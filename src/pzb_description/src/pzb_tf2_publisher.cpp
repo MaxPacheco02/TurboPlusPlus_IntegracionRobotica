@@ -15,7 +15,7 @@ class FramePublisher : public rclcpp::Node
 {
 public:
   FramePublisher()
-  : Node("pzb_tf2_publisher")
+      : Node("pzb_tf2_publisher")
   {
     ns_ = this->get_namespace();
 
@@ -40,7 +40,11 @@ private:
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
     t.header.frame_id = "odom";
-    t.child_frame_id = ns_ + "/base_axis";
+
+    if (ns_ == "" || ns_ == "/")
+      t.child_frame_id = "base_axis";
+    else
+      t.child_frame_id = ns_ + "/base_axis";
 
     t.transform.translation.x = msg->pose.pose.position.x;
     t.transform.translation.y = msg->pose.pose.position.y;
@@ -58,14 +62,14 @@ private:
     pose_stamped_tmp_.pose.position.x = msg->pose.pose.position.x;
     pose_stamped_tmp_.pose.position.y = msg->pose.pose.position.y;
     pose_path.poses.push_back(pose_stamped_tmp_);
-    
+
     // Erase elements when path is too long
-    if(pose_path.poses.size() > 5000){
-      pose_path.poses.erase(pose_path.poses.begin(), pose_path.poses.begin()+1);
+    if (pose_path.poses.size() > 5000)
+    {
+      pose_path.poses.erase(pose_path.poses.begin(), pose_path.poses.begin() + 1);
     }
 
     pose_path_pub_->publish(pose_path);
-
   }
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -77,7 +81,7 @@ private:
   std::string ns_;
 };
 
-int main(int argc, char * argv[])
+int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<FramePublisher>());
