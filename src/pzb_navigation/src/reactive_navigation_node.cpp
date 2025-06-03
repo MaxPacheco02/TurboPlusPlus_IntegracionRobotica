@@ -47,14 +47,14 @@ public:
     ReactiveNavigationNode() : Node("reactive_navigation_node")
     {
         this->declare_parameter("bug_algorithm", 0);
-        this->declare_parameter("wall_distance_thresh", 0.2);
+        this->declare_parameter("wall_distance_thresh", 0.35);
 
         // Initialize algorithm type based on parameter
         bug_algorithm = this->get_parameter("bug_algorithm").as_int();
         wall_dist_thresh = this->get_parameter("wall_distance_thresh").as_double();
 
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/fwd_avoidance_lidar", 10,
+            "/lidar", 10,
             [this](const sensor_msgs::msg::LaserScan &msg)
             {
                 angle_min = msg.angle_min;
@@ -230,13 +230,18 @@ private:
 
         marker_arr.markers.clear();
 
+        double global_heading = calculate_heading(pose_, goal_pose_);
+        double local_heading = normalize_angle(global_heading - pose_(2));
+
         bool path_clear = is_goal_clear();
         RCLCPP_INFO(this->get_logger(), "Path clear? %d", path_clear);
+        RCLCPP_INFO(this->get_logger(), "Cond 2: %d", laserscan_vector[nearest_index] < wall_dist_thresh);
+        RCLCPP_INFO(this->get_logger(), "Cond 3: %d", std::fabs(ang_distance(scan_angles[nearest_index], local_heading)) < 2 * M_PI / 8);
 
         bug_algorithm = this->get_parameter("bug_algorithm").as_int();
 
         // Discuss machine's state
-        if (!path_clear || laserscan_vector[nearest_index] < wall_dist_thresh)
+        if ((!path_clear) || ((laserscan_vector[nearest_index] < wall_dist_thresh) && (std::fabs(ang_distance(scan_angles[nearest_index], local_heading)) < 3 * M_PI / 8)))
             bug_state = NavState::SURROUND;
         else
         {
@@ -344,15 +349,27 @@ private:
             }
         }
 
+        // ang = min + inc * i
+        int idx = (local_heading - angle_min)  /angle_increment;
+
         // RCLCPP_INFO(this->get_logger(), "Local heading towards goal: %f", local_heading);
         // RCLCPP_INFO(this->get_logger(), "Nearest registered heading: %f", scan_angles[closest_idx]);
         // RCLCPP_INFO(this->get_logger(), "Closest ang's error: %f", min_ang_distance);
 
-        if (std::fabs(min_ang_distance) > 1.0)
-            return true; // The nearest obstacle is on a different direction than the goal
+        // if (std::fabs(min_ang_distance) > M_PI)
+        //     return true; // The nearest obstacle is on a different direction than the goal
 
-        if (laserscan_vector[closest_idx] > goal_dist ||
-            laserscan_vector[closest_idx] > 0.5)
+        std::cout << "goal dist: " << goal_dist << std::endl;
+        Eigen::Vector2f goals_local_v = get_point(idx);
+        std::cout << "goal local head" << goals_local_v(0) << "," << goals_local_v(1) << std::endl;
+        std::cout << "inf goal?: " << (laserscan_vector[idx] > 20.0) << std::endl;
+        add_marker(goals_local_v, 3);
+
+        // This is too big. Simulating infinite
+        if((laserscan_vector[idx] > 20.0) || goals_local_v.norm() < 0.01)
+            return true;
+        if (laserscan_vector[idx] > goal_dist ||
+            laserscan_vector[idx] > 1.0)
             return true; // There is an obstacle on the goal's direction but its further than the goal
         return false;    // The is an obstacle between the pzb and the goal
     }
@@ -406,12 +423,12 @@ private:
         // Dynamic offset based on distance
         double base_offset = 0.25;
         double scale_factor = 0.2;
-        double offset = std::min(base_offset + scale_factor * obstacle_distance, 0.4);
+        double offset = std::min(base_offset + scale_factor * obstacle_distance, 0.3);
 
         // Calculate the offset perpendicular to the wall
         Eigen::Vector2f offset_point0 = p1 + offset * normal * sense * reversed;
 
-        double forward_offset = 0.3;                               // Length of the "peek" forward
+        double forward_offset = 0.1;                               // Length of the "peek" forward
         Eigen::Vector2f forward_vector = forward_offset * tangent; // Use tangent for forward motion
 
         Eigen::Vector2f offset_point = offset_point0 + forward_vector;

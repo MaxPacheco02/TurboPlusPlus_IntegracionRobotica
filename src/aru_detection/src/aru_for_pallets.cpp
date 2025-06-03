@@ -22,7 +22,7 @@ public:
 
         using namespace std::placeholders;
 
-        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
+        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pallet/goal_pose", 10);
 
         H_T_odom.setIdentity();
         H_T_base_axis.setIdentity();

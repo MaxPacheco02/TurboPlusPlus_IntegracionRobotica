@@ -27,7 +27,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
+    ns_arg = DeclareLaunchArgument('ns_', default_value='')
 
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_pzb_description = get_package_share_directory('pzb_description')
@@ -50,7 +50,7 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-                   '/pzb/odom@nav_msgs/msg/Odometry@gz.msgs.OdometryWithCovariance',
+                   '/odom@nav_msgs/msg/Odometry@gz.msgs.OdometryWithCovariance',
                    '/lidar@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
                    '/lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
                    '/pzb_gz_drive@geometry_msgs/msg/Twist@gz.msgs.Twist',  
