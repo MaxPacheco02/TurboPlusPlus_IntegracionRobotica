@@ -43,7 +43,7 @@ public:
             "/lift_state", 10,
             [this](const pzb_msgs::msg::LiftState &msg)
             {
-                loaded_lift = (msg.state == pzb_msgs::msg::LiftState::LIFT_LOADED);
+                loaded_lift_ = (msg.state == pzb_msgs::msg::LiftState::LIFT_LOADED);
             });
 
         pallet_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -61,10 +61,15 @@ public:
         // Initialize state variables
         state_ = State::PALLET_SEARCH;
         lift_state_ = LIFTSTATE::IDLE;
-        ps_state = PSState::IDLE;
+        ps_state_ = PSState::IDLE;
         pc_state_ = PCState::IDLE;
         ts_state_ = TSState::LOAD;
-        pd_state_ = PDState::LOADED;
+        pd_state_ = PDState::LOAD;
+
+        pallet_search_completed_ = false;
+        pallet_collection_completed_ = false;
+        trailer_search_completed_ = false;
+        pallet_delivery_completed_ = false;
 
         // Initialize flags
         loaded_lift_ = false;
@@ -80,7 +85,10 @@ public:
         pallet_detected_ = false;
         trailer_detected_ = false;
         backup_sent_ = false;
-
+        req_sent_ = false;
+        
+        req_id_ = 0;
+        reached_id_ = 0;
         trailer_distance_ = 0.20; // Distance to trailer in meters
         pallet_distance_ = 0.05; // Distance to pallet in meters
         last_pallet_update_ = this->get_clock()->now();
@@ -127,7 +135,7 @@ private:
 
     enum class PDState
     {
-        LOADED,
+        LOAD,
         RAISE,
         ALIGN,
         APPROACH,
@@ -139,9 +147,18 @@ private:
     // State variables
     State state_;
     LIFTSTATE lift_state_;
+    PSState ps_state_;
     PCState pc_state_;
+    TSState ts_state_;
     PDState pd_state_;
 
+    // State completion flags
+    bool pallet_search_completed_;
+    bool pallet_collection_completed_;
+    bool trailer_search_completed_;
+    bool pallet_delivery_completed_;
+
+    // Operation flags
     bool preload_sent_;
     bool ref_reached_;
     bool approach_sent_;
@@ -153,6 +170,9 @@ private:
     bool backup_sent_;
     bool pallet_detected_;
     bool trailer_detected_;
+
+    int req_id_;
+    int reached_id_;
 
     // Distance 
     double pallet_distance_;
@@ -173,8 +193,10 @@ private:
         switch (state_)
         {
         case State::PALLET_SEARCH:
-            if (pallet_detected_ && !loaded_lift_)
+            if (pallet_search_completed_)
             {
+                pallet_search_completed_ = false;
+                ps_state_ = PSState::IDLE;
                 pc_state_ = PCState::IDLE;
                 state_ = State::PALLET_COLLECTION;
             }
@@ -185,8 +207,10 @@ private:
             break;
 
         case State::PALLET_COLLECTION:
-            if (loaded_lift_)
+            if (pallet_collection_completed_)
             {
+                pallet_collection_completed_ = false;
+                pc_state_ = PCState::IDLE;
                 ts_state_ = TSState::LOAD;
                 state_ = State::TRAILER_SEARCH;
             }
@@ -197,9 +221,11 @@ private:
             break;
 
         case State::TRAILER_SEARCH:
-            if (trailer_detected_ && loaded_lift_)
+            if (trailer_search_completed_)
             {
-                pd_state_ = PDState::LOADED;
+                trailer_search_completed_ = false;
+                ts_state_ = TSState::LOAD;
+                pd_state_ = PDState::LOAD;
                 state_ = State::PALLET_DELIVERY;
             }
             else
@@ -209,8 +235,10 @@ private:
             break;
 
         case State::PALLET_DELIVERY:
-            if (!loaded_lift_)
+            if (pallet_delivery_completed_)
             {
+                pallet_delivery_completed_ = false;
+                pd_state_ = PDState::LOAD;
                 pc_state_ = PCState::IDLE;
                 state_ = State::PALLET_SEARCH;
             }
@@ -219,6 +247,7 @@ private:
                 pallet_delivery();
             }
             break;
+
         }
     }
 
@@ -234,10 +263,34 @@ private:
         }
     }
 
+
+
+
+
+
+
+
+    // TODO - Implement the pallet search function
     void pallet_search()
     {
-        RCLCPP_INFO(this->get_logger(), "[PALLET_SEARCH] Scanning for pallets...");
+        switch (ps_state_)
+        {
+        case PSState::IDLE:
+            RCLCPP_INFO(this->get_logger(), "[PS] IDLE - Starting pallet search");
+            ps_state_ = PSState::NAVIGATE;
+            break;
+
+        case PSState::NAVIGATE:
+            RCLCPP_INFO(this->get_logger(), "[PS] NAVIGATE - Scanning for pallets...");
+            if (pallet_detected_ && !loaded_lift_) {
+                pallet_search_completed_ = true; 
+                RCLCPP_INFO(this->get_logger(), "[PS] Pallet detected - search complete");
+            }
+            break;
+        }
+
     }
+    // end of TODO
 
     void pallet_collection()
     {
@@ -257,24 +310,24 @@ private:
 
         case PCState::PRELOAD:
             RCLCPP_INFO(this->get_logger(), "[PC] PRELOAD");
-            if (!ref_reached_) {
-                call_unreached_ref();
-                call_align_pallet_service();
-                ref_reached_ = true;
+            if (!req_sent_) {
+                call_align_pallet_service(req_id_);
+                req_sent_ = true;
             }
-            if (reference_reached() && pallet_aligned()) {
+            if (req_sent_ && req_id_ == reached_id_) {
                 pc_state_ = PCState::ALIGN;
-                ref_reached_ = false;
+                req_id_ = req_id_ + 1;
+                req_sent_ = false;
             }
             break;
 
         case PCState::ALIGN:
             RCLCPP_INFO(this->get_logger(), "[PC] ALIGN");
             if (!approach_sent_) {
-                call_approach_service(pallet_distance_);
+                call_approach_service(req_id_-1, pallet_distance_);
                 approach_sent_ = true;
             }
-            if (approach_reached()) {
+            if (req_id_ == reached_id_) {
                 pc_state_ = PCState::APPROACH;
                 approach_sent_ = false;
             }
@@ -298,22 +351,38 @@ private:
             if (loaded_lift_)
             {
                 RCLCPP_INFO(this->get_logger(), "[PC] Pallet loaded successfully.");
-                state_ = State::TRAILER_SEARCH;
+                pallet_collection_completed_ = true;
             }
             break;
         }
     }
 
+    // TODO - Implement the trailer search function
     void trailer_search()
     {
-        RCLCPP_INFO(this->get_logger(), "[TRAILER_SEARCH] Looking for trailer...");
+        switch (ts_state_)
+        {
+        case TSState::LOAD:
+            RCLCPP_INFO(this->get_logger(), "[TS] LOAD - Starting trailer search");
+            ts_state_ = TSState::SEARCH;
+            break;
+
+        case TSState::SEARCH:
+            RCLCPP_INFO(this->get_logger(), "[TS] SEARCH - Looking for trailer...");
+            if (trailer_detected_ && loaded_lift_) {
+                trailer_search_completed_ = true;  // Signal completion
+                RCLCPP_INFO(this->get_logger(), "[TS] Trailer detected - search complete");
+            }
+            break;
+        }
     }
+    // end of TODO
 
     void pallet_delivery()
     {
         switch (pd_state_)
         {
-        case PDState::LOADED:
+        case PDState::LOAD:
             RCLCPP_INFO(this->get_logger(), "[PD] LOADED");
             if (!raise_sent_) {
                 call_lift_service(LIFTSTATE::RAISE);
@@ -327,24 +396,25 @@ private:
 
         case PDState::RAISE:
             RCLCPP_INFO(this->get_logger(), "[PD] RAISE");
-            if (!pallet_aligned_) {
-                call_align_trailer_service();
-                pallet_aligned_ = true;
+            if (!req_sent_) {
+                call_align_trailer_service(req_id_);
+                req_sent_ = true;
             }
-            if (trailer_aligned()) {
+            if (req_sent_ && req_id_ == reached_id_)  {
                 pd_state_ = PDState::ALIGN;
-                pallet_aligned_ = false;
+                req_id_ = req_id_ + 1;
+                req_sent_ = false;
             }
             break;
 
         case PDState::ALIGN:
             RCLCPP_INFO(this->get_logger(), "[PD] ALIGN");
             if (!approach_sent_) {
-                call_approach_service(trailer_distance_);
+                call_approach_service(req_id_, trailer_distance_);
                 approach_sent_ = true;
             }
-            if (approach_reached()) {
-                pd_state_ = PDState::APPROACH;
+            if (req_id_ == reached_id_) {
+                pd_state_ = PDState::APPROACH;  
                 approach_sent_ = false;
             }
             break;
@@ -369,7 +439,7 @@ private:
                 call_approach_service(-trailer_distance_);
                 backup_sent_ = true;
             }
-            if (approach_reached()){
+            if (backup_sent_ && req_id_ == reached_id_){
                 pd_state_ = PDState::BACKUP;
                 backup_sent_ = false;
             }
@@ -388,7 +458,6 @@ private:
             break;
         }
     }
-
 };
 
 int main(int argc, char **argv)
