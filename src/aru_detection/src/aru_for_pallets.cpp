@@ -22,7 +22,7 @@ public:
 
         using namespace std::placeholders;
 
-        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pallet/goal_pose", 10);
+        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
 
         H_T_odom.setIdentity();
         H_T_base_axis.setIdentity();
@@ -33,7 +33,7 @@ public:
         Eigen::Quaternionf q_cam(quat.w(),quat.x(),quat.y(),quat.z());
         Rc = q_cam.toRotationMatrix();
         H_T_base_axis.block<3, 3>(0,0) = Rc;
-        H_T_base_axis.block<3, 1>(0,3) << 0.056, 0.0, 0.153;
+        H_T_base_axis.block<3, 1>(0,3) << 0.056, 0.0, 0.195;
         
         // PARA CORRECION DE ROTACION DE ARUCO
         R_corr_aru = Eigen::AngleAxisf(roll_correction,  Eigen::Vector3f::UnitX()) *

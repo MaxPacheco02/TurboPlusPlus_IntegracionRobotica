@@ -86,7 +86,7 @@ private:
     void handle_aru_sys(const std::shared_ptr<pzb_msgs::msg::ArucoList> msg){
         // ARU SYSTEM BROADCAST
         // BASE -> CAMERA 
-        t_cam.header.frame_id = "pzb/base_axis";
+        t_cam.header.frame_id = "base_axis";
         t_cam.child_frame_id = "camera";
         t_cam.header.stamp = this->get_clock()->now();
 

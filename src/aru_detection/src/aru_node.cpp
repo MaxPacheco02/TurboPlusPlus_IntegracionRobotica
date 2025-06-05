@@ -233,7 +233,7 @@ private:
         poseW_.id = -2;
         poseW_.pose.position.x = 0.056;
         poseW_.pose.position.y = 0.0;
-        poseW_.pose.position.z = 0.153;
+        poseW_.pose.position.z = 0.195;
         poseW_.pose.orientation.x = quat[3];
         poseW_.pose.orientation.y = quat[2];
         poseW_.pose.orientation.z = quat[1];
