@@ -32,7 +32,7 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
-#include "pzb_msgs/msg/aruco_list.hpp" 
+#include "pzb_msgs/msg/aruco_list.hpp"
 
 using namespace std::chrono_literals;
 
@@ -46,22 +46,23 @@ public:
 
         l_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
             "/VelocityEncL", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
-            [this](const std_msgs::msg::Float32 &msg){
+            [this](const std_msgs::msg::Float32 &msg)
+            {
                 w1 = msg.data;
                 update_xid_params_ws();
             });
 
         r_enc_sub_ = this->create_subscription<std_msgs::msg::Float32>(
             "/VelocityEncR", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
-            [this](const std_msgs::msg::Float32 &msg){
+            [this](const std_msgs::msg::Float32 &msg)
+            {
                 w2 = msg.data;
                 update_xid_params_ws();
             });
 
         aru_sub_ = this->create_subscription<pzb_msgs::msg::ArucoList>(
             "pzb/aru_sys", 10,
-            std::bind(&DeadReckoingNode::aru_sys_id, this,_1));
-
+            std::bind(&DeadReckoingNode::aru_sys_id, this, _1));
 
         odometry_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
         update_timer_ = this->create_wall_timer(10ms, std::bind(&DeadReckoingNode::update, this));
@@ -70,10 +71,10 @@ public:
         miu_hat_dot << 0, 0, 0;
 
         // para kalman_localization
-        //------------------------------------------------  
+        //------------------------------------------------
         Q_k << 0.0, 0.0, 0.0,
-               0.0, 0.0, 0.0,
-               0.0, 0.0, 0.0;
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0;
 
         // ID'S 0,1,2, etc.
         aruco_map[1] = Eigen::Vector2f(0.90, -0.16);
@@ -94,11 +95,11 @@ public:
         I_2.setIdentity();
 
         R_k << 0.1, 0.0,
-               0.0, 0.02;
+            0.0, 0.02;
 
         nearest_id = -2;
         z_k << 0.0, 0.0;
-        
+
         H_k.setIdentity();
         sigma_hat.setZero();
         sigma_k.setZero();
@@ -110,14 +111,22 @@ public:
         z_hat.setZero();
         Z_k.setZero();
         G_k.setZero();
-        K_k.setZero(); 
+        K_k.setZero();
         //------------------------------------------------
+        
+        // PARA CALCULO DE z_k CON MATRICES HOMOGENEAS
+        quat_aru.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        Eigen::Quaternionf q_cam(quat_aru.w(), quat_aru.x(), quat_aru.y(), quat_aru.z());
+        Rc = q_cam.toRotationMatrix();
+
+        H_T_aru_axis = Eigen::Matrix4f::Identity();
+        H_T_aru_axis.block<3, 3>(0, 0) = Rc;
+        H_T_aru_axis.block<3, 1>(0, 3) << 0.056, 0.0, 0.153;
 
         odometry_msg.header.frame_id = "odom";
     }
 
 private:
-
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr l_enc_sub_, r_enc_sub_;
     rclcpp::Subscription<pzb_msgs::msg::ArucoList>::SharedPtr aru_sub_;
 
@@ -128,6 +137,7 @@ private:
     nav_msgs::msg::Odometry odometry_msg;
 
     tf2::Quaternion quat;
+    tf2::Quaternion quat_aru;
 
     std::string ns_;
 
@@ -142,7 +152,7 @@ private:
     tf2_ros::TransformListener tf_listener_;
 
     geometry_msgs::msg::TransformStamped tf_aru;
-    
+
     std::unordered_map<int, Eigen::Vector2f> aruco_map;
 
     Eigen::Vector3f miu_k, miu_hat, miu_hat_dot;
@@ -154,34 +164,38 @@ private:
     Eigen::Matrix<float, 2, 3> G_k;
     Eigen::Matrix<float, 3, 2> K_k, h_w, delta_w;
 
+    Eigen::Matrix3f Rc;
+    Eigen::Matrix4f H_T_aru_axis;
+    Eigen::Vector4f pos_aru, pos_axis;
+
     int nearest_id;
     //------------------------------------------------
 
-    void update() {      
-        // RCLCPP_ERROR(get_logger(), "%f,%f,%f - %f, %f", xi(0),xi(1),xi(2), twist_x, twist_z);
+    void update()
+    {
+        miu_hat_dot << twist_x * cos(miu_k(2)),
+            twist_x * sin(miu_k(2)),
+            twist_z;
 
-        miu_hat_dot << twist_x* cos(miu_k(2)),
-                       twist_x* sin(miu_k(2)),
-                       twist_z;
-        
         // Integrate
         miu_hat << miu_k + miu_hat_dot * dt;
 
         // Make theta [-pi, pi]
-        miu_hat(2) = std::fmod(miu_hat(2) + M_PI, 2*M_PI) - M_PI;
+        miu_hat(2) = normalize_angle(miu_hat(2));
 
-        std::cout << "miu_hat: " << miu_hat << "\n" <<std::endl;
+        std::cout << "miu_hat: " << miu_hat << "\n"
+                  << std::endl;
 
-        //kalman local start
-        H_k(0,2) = -(dt * miu_hat_dot(1));
-        H_k(1,2) = dt * miu_hat_dot(0);
-        
-        sigma_w(0,0) = 0.05 * std::abs(w2); //kr
-        sigma_w(1,1) = 0.05 * std::abs(w1); //kl
+        // kalman local start
+        H_k(0, 2) = -(dt * miu_hat_dot(1));
+        H_k(1, 2) = dt * miu_hat_dot(0);
+
+        sigma_w(0, 0) = 0.8 * std::abs(w2); // kr
+        sigma_w(1, 1) = 0.8 * std::abs(w1); // kl
 
         delta_w << cos(miu_k(2)), cos(miu_k(2)),
-                   sin(miu_k(2)), sin(miu_k(2)),
-                   2/l, -2/l;
+            sin(miu_k(2)), sin(miu_k(2)),
+            2 / l, -2 / l;
 
         h_w = 0.5 * r * dt * delta_w;
         Q_k = h_w * sigma_w * h_w.transpose();
@@ -190,18 +204,22 @@ private:
 
         auto it = aruco_map.find(nearest_id);
 
-        // REVISAR SI EL ID EXISTE EN EL MAPA 
-        if (it != aruco_map.end()) { //&& z_k(1) != 0.0
-            const auto& marker_pos = it->second;
+        // REVISAR SI EL ID EXISTE EN EL MAPA
+        if (it != aruco_map.end())
+        { //&& z_k(1) != 0.0
+            const auto &marker_pos = it->second;
             calc_zHat(marker_pos.x(), marker_pos.y());
             calc_Gradient_G(marker_pos.x(), marker_pos.y());
             everything_else();
-        } else {
+        }
+        else
+        {
             miu_k = miu_hat;
             sigma_k = sigma_hat;
         }
 
-        std::cout << "miu_k: " << miu_k << "\n" <<std::endl;
+        std::cout << "miu_k: " << miu_k << "\n"
+                  << std::endl;
 
         // Set and publish ROS msgs
         quat.setRPY(0, 0, miu_k(2));
@@ -212,14 +230,14 @@ private:
         odometry_msg.twist.twist.linear.x = twist_x;
         odometry_msg.twist.twist.angular.z = twist_z;
 
-        odometry_msg.pose.covariance[0]  = sigma_k(0, 0);  
-        odometry_msg.pose.covariance[1]  = sigma_k(0, 1);  
-        odometry_msg.pose.covariance[5]  = sigma_k(0, 2);  
-        odometry_msg.pose.covariance[6]  = sigma_k(1, 0);  
-        odometry_msg.pose.covariance[7]  = sigma_k(1, 1);  
-        odometry_msg.pose.covariance[11] = sigma_k(1, 2);  
-        odometry_msg.pose.covariance[30] = sigma_k(2, 0);  
-        odometry_msg.pose.covariance[31] = sigma_k(2, 1);  
+        odometry_msg.pose.covariance[0] = sigma_k(0, 0);
+        odometry_msg.pose.covariance[1] = sigma_k(0, 1);
+        odometry_msg.pose.covariance[5] = sigma_k(0, 2);
+        odometry_msg.pose.covariance[6] = sigma_k(1, 0);
+        odometry_msg.pose.covariance[7] = sigma_k(1, 1);
+        odometry_msg.pose.covariance[11] = sigma_k(1, 2);
+        odometry_msg.pose.covariance[30] = sigma_k(2, 0);
+        odometry_msg.pose.covariance[31] = sigma_k(2, 1);
         odometry_msg.pose.covariance[35] = sigma_k(2, 2);
 
         odometry_msg.header.stamp = this->get_clock()->now();
@@ -228,74 +246,50 @@ private:
     }
 
     // Obtain velocity vector params with wheels' ang. vel
-    void update_xid_params_ws(){
-        twist_x = (r/2) * (w1 + w2);
-        twist_z = (r/(2*l)) * (w2 - w1);
+    void update_xid_params_ws()
+    {
+        twist_x = (r / 2) * (w1 + w2);
+        twist_z = (r / (2 * l)) * (w2 - w1);
     }
 
-    // -------------------------------------------------------------------------------------------------------------------------
-    void aru_sys_id(const pzb_msgs::msg::ArucoList &msg){
-        if(msg.markers.size() > 1){
-            // CALCULO DE z_k CON MATRICES HOMOGENEAS
-            tf2::Quaternion quat;
-            quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
-            Eigen::Quaternionf q_cam(quat.w(),quat.x(),quat.y(),quat.z());
-            Eigen::Matrix3f Rc = q_cam.toRotationMatrix();
-
-            Eigen::Matrix4f H_T_base = Eigen::Matrix4f::Identity();
-            H_T_base.block<3, 3>(0,0) = Rc;
-            H_T_base.block<3, 1>(0,3) << 0.108, 0.0, 0.044;
-            
-            Eigen::Matrix4f H_T_axis = Eigen::Matrix4f::Identity();
-            H_T_axis.block<3, 3>(0,0) = Eigen::Matrix3f::Identity();
-            H_T_axis.block<3, 1>(0,3) << -0.052, 0.0, 0.049;
-
-            Eigen::Matrix4f H_T_aru_axis = H_T_axis * H_T_base;
-
-            Eigen::Vector4f pos_aru;
-            pos_aru << msg.markers[1].pose.position.x, 
-                       msg.markers[1].pose.position.y,
-                       msg.markers[1].pose.position.z,
-                       1.0;
-            
-            Eigen::Vector4f pos_axis = H_T_aru_axis * pos_aru;
+    void aru_sys_id(const pzb_msgs::msg::ArucoList &msg)
+    {
+        if (msg.markers.size() > 1)
+        {
+            pos_aru << msg.markers[1].pose.position.x,
+                msg.markers[1].pose.position.y,
+                msg.markers[1].pose.position.z,
+                1.0;
+            pos_axis = H_T_aru_axis * pos_aru;
             nearest_id = msg.markers[1].id;
 
-            double alpha = atan2(pos_axis(1),pos_axis(0));
+            double alpha = atan2(pos_axis(1), pos_axis(0));
 
-            alpha = std::fmod(alpha + M_PI, 2*M_PI) - M_PI;
+            alpha = normalize_angle(alpha);
 
             z_k << std::hypot(pos_axis(0), pos_axis(1)), alpha;
-
-        }else{
+        }
+        else
+        {
             nearest_id = -2;
         }
-        // rclcpp::Time now = this->get_clock()->now();
-        // if (tf_buffer_.canTransform("pzb/base_axis","aruco_center",now,rclcpp::Duration::from_seconds(0.00001))) {
-        //     if(msg.markers.size() > 1){
-        //         tf_aru = tf_buffer_.lookupTransform("pzb/base_axis","aruco_center",now);
-        //         nearest_id = msg.markers[1].id;
-        //         double alpha = atan2(tf_aru.transform.translation.y,tf_aru.transform.translation.x);
-        //         z_k << std::hypot(tf_aru.transform.translation.x, tf_aru.transform.translation.y), alpha;
-        //     }else{
-        //         nearest_id = -2;
-        //     }
-        // }
     }
 
-    void calc_zHat(double m_x_i, double m_y_i) {
+    void calc_zHat(double m_x_i, double m_y_i)
+    {
         double dx = m_x_i - miu_hat(0);
         double dy = m_y_i - miu_hat(1);
 
         double range = std::hypot(dx, dy);
         double bearing = std::atan2(dy, dx) - miu_hat(2);
 
-        bearing = std::fmod(bearing + M_PI, 2*M_PI) - M_PI;
+        bearing = normalize_angle(bearing);
 
-        z_hat << range, bearing; //6
+        z_hat << range, bearing; // 6
     }
 
-    void calc_Gradient_G(double m_x_i, double m_y_i) {
+    void calc_Gradient_G(double m_x_i, double m_y_i)
+    {
         double delta_x = m_x_i - miu_hat(0);
         double delta_y = m_y_i - miu_hat(1);
 
@@ -308,17 +302,26 @@ private:
 
         G_k(1, 0) = delta_y / p;
         G_k(1, 1) = -delta_x / p;
-        G_k(1, 2) = -1.0; //7
+        G_k(1, 2) = -1.0; // 7
     }
 
-    void everything_else(){
-        Z_k = G_k * sigma_hat * G_k.transpose() + R_k; //8
-        K_k = sigma_hat * G_k.transpose() * Z_k.ldlt().solve(I_2); //9
-        miu_k = miu_hat + K_k * (z_k - z_hat); //10
-        miu_k(2) = std::fmod(miu_k(2) + M_PI, 2*M_PI) - M_PI;
-        // std::cout << "z_k: " << z_k << "\n" <<std::endl;
-        // std::cout << "z_hat: " << z_hat << "\n" <<std::endl;
-        sigma_k = (I - K_k * G_k) * sigma_hat; //11
+    void everything_else()
+    {
+        Z_k = G_k * sigma_hat * G_k.transpose() + R_k;             // 8
+        K_k = sigma_hat * G_k.transpose() * Z_k.ldlt().solve(I_2); // 9
+        Eigen::Vector2f z_diff = (z_k - z_hat);
+        z_diff(1) = normalize_angle(z_diff(1));
+        miu_k = miu_hat + K_k * z_diff; //10
+        miu_k(2) = normalize_angle(miu_k(2));
+        sigma_k = (I - K_k * G_k) * sigma_hat; // 11
+    }
+
+    double normalize_angle(double x)
+    {
+        x = std::fmod(x + M_PI, M_PI * 2);
+        if (x < 0)
+            x += M_PI * 2;
+        return x - M_PI;
     }
 };
 

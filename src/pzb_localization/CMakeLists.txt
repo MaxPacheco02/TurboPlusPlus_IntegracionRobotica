@@ -98,10 +98,14 @@ target_link_libraries(mcl_node
 add_executable(laser_preprocess src/laser_preprocess.cpp)
 ament_target_dependencies(laser_preprocess ${DEPENDENCIES})
 
+add_executable(laser_simulate src/laser_simulate.cpp)
+ament_target_dependencies(laser_simulate ${DEPENDENCIES})
+
 # Install targets
 install(TARGETS   # dead_reckoning
   mcl_node
   laser_preprocess
+  laser_simulate
   DESTINATION lib/${PROJECT_NAME}
 )
 

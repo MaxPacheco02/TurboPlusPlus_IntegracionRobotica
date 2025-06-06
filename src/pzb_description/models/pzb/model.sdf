@@ -15,7 +15,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <pose>0 0 0 -1.5708 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://pzb/meshes/pzb_lidar.dae</uri>
+            <uri>file://pzb/meshes/pzb_lidarless.dae</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
@@ -24,7 +24,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
         <pose>0 0 0 -1.5708 0 0</pose>
         <geometry>
           <mesh>
-            <uri>file://pzb/meshes/pzb_lidar.dae</uri>
+            <uri>file://pzb/meshes/pzb_lidarless.dae</uri>
             <scale>1 1 0.1</scale>
           </mesh>
         </geometry>
@@ -113,7 +113,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
           <frame_id>odom</frame_id>
         </plugin>
       </sensor>
-      
+
     </link>
 
     <!-- Right Wheel -->
@@ -210,7 +210,15 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
 
     <!-- Lidar Link -->
     <link name="lidar_link">
-      <!-- <pose>0 0 0 0 0 0</pose> -->
+      <visual name="lidar_visual">
+        <pose>0.052 0 0.102 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>file://pzb/meshes/lidar_cap.dae</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+      </visual>
     </link>
 
 
@@ -259,8 +267,15 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
     </joint>
 
     <!-- Lidar Joint -->
-    <joint name="lidar_joint" type="fixed">
+    <joint name="lidar_joint" type="revolute">
       <parent>base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1.79769e+308</lower>
+          <upper>1.79769e+308</upper>
+        </limit>
+      </axis>
       <child>lidar_link</child>
       <pose>0.052 0 0.1 0 0 0</pose>
     </joint>
@@ -279,7 +294,7 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       filename="gz-sim-odometry-publisher-system"
       name="gz::sim::systems::OdometryPublisher">
       <odom_frame>odom</odom_frame>
-      <odom_covariance_topic>/pzb/odom</odom_covariance_topic>
+      <odom_covariance_topic>/odom</odom_covariance_topic>
       <robot_base_frame>lidar_link</robot_base_frame>
     </plugin>
 
@@ -287,6 +302,14 @@ gz topic -t "/pzb_gz_drive" -m gz.msgs.Twist -p "linear: {x: 0.1} angular: {z: 0
       filename="gz-sim-joint-state-publisher-system"
       name="gz::sim::systems::JointStatePublisher">
       <topic>/gz/joints</topic>
+    </plugin>
+
+    <plugin
+      filename="gz-sim-joint-controller-system"
+      name="gz::sim::systems::JointController">
+      <joint_name>lidar_joint</joint_name>
+      <initial_velocity>25.0</initial_velocity>
+      <topic>lidar_speed</topic>
     </plugin>
 
   </model>

@@ -35,7 +35,7 @@ MCLNode::~MCLNode()
 void MCLNode::initializeMap()
 {
     // Initialize empty map with default size
-    map_msg_.info.resolution = 0.01;                      // cm per cell
+    map_msg_.info.resolution = 0.025;                      // cm per cell
     map_msg_.info.width = 10 / map_msg_.info.resolution;  // 10 meters
     map_msg_.info.height = 10 / map_msg_.info.resolution; // 10 meters
 
@@ -62,9 +62,160 @@ void MCLNode::initializeMap()
 
 void MCLNode::initializeParameters()
 {
-    particles_N_ = 2000;
-    pc_ang_sep_ = 10.0;   // Reduced from 9.0 for better angular resolution
+    particles_N_ = 5000;
+    pc_ang_sep_ = 36.0;
     update_rate_ = 10.0; // Hz
+    lidar_angle_offset_ = 0.0;
+    accumulated_turn_error_ = 0.0;
+    angle_offset_rate_ = 0.001; // Small increment per update
+    last_offset_update_ = std::chrono::steady_clock::now();
+    recent_angular_errors_.reserve(MAX_ERROR_HISTORY);
+}
+
+void MCLNode::updateLidarAngleOffset()
+{
+    // Only update offset when we have enough map data and are moving
+    if (map_N_ < 100 || fabs(control_.turn) < 0.01)
+    {
+        return;
+    }
+
+    // Find best offset every few updates to avoid too much computation
+    static int update_counter = 0;
+    update_counter++;
+
+    if (update_counter >= 20)
+    { // Every 20 updates
+        double best_offset = findBestLidarAngleOffset();
+
+        // Only update if the improvement is significant
+        if (fabs(best_offset - lidar_angle_offset_) > 0.005)
+        { // ~0.3 degrees
+            RCLCPP_INFO(get_logger(), "Updated lidar offset from %.4f to %.4f (%.2f to %.2f deg)",
+                        lidar_angle_offset_, best_offset,
+                        lidar_angle_offset_ * 180.0 / M_PI, best_offset * 180.0 / M_PI);
+            lidar_angle_offset_ = best_offset;
+        }
+
+        update_counter = 0;
+    }
+}
+
+double MCLNode::findBestLidarAngleOffset()
+{
+    double robot_x = pose_.position.x;
+    double robot_y = pose_.position.y;
+    double robot_yaw = tf2::getYaw(pose_.orientation);
+
+    double best_offset = lidar_angle_offset_;
+    double best_score = -1.0;
+
+    // Try different offsets around current value
+    const double search_range = 0.4; // ±0.1 radians (~±6 degrees)
+    const double search_step = 0.04; // 0.01 radians (~0.6 degrees)
+
+    for (double test_offset = lidar_angle_offset_ - search_range;
+         test_offset <= lidar_angle_offset_ + search_range;
+         test_offset += search_step)
+    {
+
+        double score = 0.0;
+        int valid_points = 0;
+
+        // Test how well this offset aligns with existing map
+        for (size_t i = 0; i < filtered_ranges_.size(); i += 2)
+        { // Sample every other point for speed
+            if (!std::isfinite(filtered_ranges_[i]))
+                continue;
+
+            // Calculate point position with test offset
+            double angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) +
+                           robot_yaw + test_offset;
+
+            double point_x = robot_x + filtered_ranges_[i] * cos(angle);
+            double point_y = robot_y + filtered_ranges_[i] * sin(angle);
+
+            // Find distance to closest existing map point
+            double min_distance = std::numeric_limits<double>::max();
+            for (int j = 0; j < map_N_; j++)
+            {
+                double dx = map_[j].x - point_x;
+                double dy = map_[j].y - point_y;
+                double dist = sqrt(dx * dx + dy * dy);
+                min_distance = std::min(min_distance, dist);
+
+                // Early exit if we find a very close point
+                if (dist < 0.05)
+                    break;
+            }
+
+            // Score based on proximity (closer = better score)
+            if (min_distance < 0.2)
+            {                                       // Only consider points within 20cm
+                score += exp(-min_distance / 0.05); // Exponential decay with 5cm characteristic distance
+                valid_points++;
+            }
+        }
+
+        // Normalize score by number of valid points
+        if (valid_points > 5)
+        { // Need at least 5 valid comparisons
+            score /= valid_points;
+
+            if (score > best_score)
+            {
+                best_score = score;
+                best_offset = test_offset;
+            }
+        }
+    }
+
+    RCLCPP_DEBUG(get_logger(), "Best offset: %.4f (score: %.4f)", best_offset, best_score);
+    return best_offset;
+}
+
+double MCLNode::calculateAlignmentError()
+{
+    double robot_x = pose_.position.x;
+    double robot_y = pose_.position.y;
+    double robot_yaw = tf2::getYaw(pose_.orientation);
+
+    double total_error = 0.0;
+    int valid_comparisons = 0;
+
+    // Sample every few rays to avoid computational overhead
+    for (size_t i = 0; i < filtered_ranges_.size(); i += 3)
+    {
+        if (!std::isfinite(filtered_ranges_[i]))
+            continue;
+
+        // Current angle calculation
+        double current_angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) +
+                               robot_yaw + lidar_angle_offset_;
+
+        double expected_x = robot_x + filtered_ranges_[i] * cos(current_angle);
+        double expected_y = robot_y + filtered_ranges_[i] * sin(current_angle);
+
+        // Find closest map point
+        double min_distance = std::numeric_limits<double>::max();
+        for (int j = 0; j < map_N_; j++)
+        {
+            double dx = map_[j].x - expected_x;
+            double dy = map_[j].y - expected_y;
+            double dist = sqrt(dx * dx + dy * dy);
+            min_distance = std::min(min_distance, dist);
+        }
+
+        // Convert distance error to angular error estimate
+        if (min_distance < 0.5 && filtered_ranges_[i] > 0.1)
+        { // Only for reasonable distances
+            double angular_error = atan2(min_distance, filtered_ranges_[i]);
+            total_error += angular_error;
+            valid_comparisons++;
+        }
+    }
+
+    return valid_comparisons > 0 ? total_error / valid_comparisons : 0.0;
 }
 
 void MCLNode::initializePublishersAndSubscribers()
@@ -87,7 +238,7 @@ void MCLNode::initializePublishersAndSubscribers()
 
     // Create subscribers
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-        "pzb/odom", 10,
+        "odom", 10,
         std::bind(&MCLNode::odomCallback, this, std::placeholders::_1));
 
     initial_estimate_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -95,7 +246,7 @@ void MCLNode::initializePublishersAndSubscribers()
         std::bind(&MCLNode::estimateCallback, this, std::placeholders::_1));
 
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "pzb/map", 10,
+        "map", 10,
         std::bind(&MCLNode::mapCallback, this, std::placeholders::_1));
 
     laser_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
@@ -231,7 +382,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 {
     // Initialize robot
     robot_.set_states(0.0, 0.0, 0.0);
-    robot_.set_noise(0.05, 0.5, 0.1);
+    robot_.set_noise(0.2, 0.2, 0.02);
 
     // Initialize CUDA memory
     particles_size_ = particles_N_ * sizeof(particle);
@@ -266,7 +417,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + tight_pos_dist(gen),
             init_y + tight_pos_dist(gen),
             init_theta + tight_angle_dist(gen));
-        r.set_noise(0.05, 0.5, 0.1);
+        r.set_noise(0.2, 0.2, 0.02);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
 
@@ -281,7 +432,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + wide_pos_dist(gen),
             init_y + wide_pos_dist(gen),
             init_theta + wide_angle_dist(gen));
-        r.set_noise(0.05, 0.5, 0.1);
+        r.set_noise(0.2, 0.2, 0.02);
         particles_[i] = particle{r, 1.0 / particles_N_};
     }
 
@@ -304,7 +455,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
 
             Robot r;
             r.set_states(x, y, theta);
-            r.set_noise(0.05, 0.5, 0.1);
+            r.set_noise(0.2, 0.2, 0.02);
             particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
         }
     }
@@ -317,7 +468,7 @@ void MCLNode::initializeMCLComponents(double init_x, double init_y, double init_
             init_x + wide_pos_dist(gen) * 1.5,
             init_y + wide_pos_dist(gen) * 1.5,
             init_theta + wide_angle_dist(gen) * 1.5);
-        r.set_noise(0.05, 0.5, 0.1);
+        r.set_noise(0.2, 0.2, 0.02);
         particles_[particle_idx++] = particle{r, 1.0 / particles_N_};
     }
 }
@@ -363,12 +514,14 @@ void MCLNode::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 
 void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
-    // Use current pose for map updates
-    double robot_x = mcl_msg_.pose.pose.position.x; // Using mcl_msg_.pose.pose instead of mcl_msg_
-    double robot_y = mcl_msg_.pose.pose.position.y;
-    double robot_yaw = tf2::getYaw(mcl_msg_.pose.pose.orientation);
+    // Update the dynamic offset first
+    updateLidarAngleOffset();
 
-    // Temporary storage for new points
+    // Use current pose for map updates
+    double robot_x = pose_.position.x;
+    double robot_y = pose_.position.y;
+    double robot_yaw = tf2::getYaw(pose_.orientation);
+
     std::vector<Point> new_points;
     new_points.reserve(filtered_ranges_.size());
 
@@ -376,25 +529,20 @@ void MCLNode::updateMapFromLaser(const sensor_msgs::msg::LaserScan::SharedPtr ms
     {
         if (!std::isfinite(filtered_ranges_[i]))
         {
-            continue; // Skip this measurement
+            continue;
         }
 
-        // Calculate angle for this ray
-        double angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) + robot_yaw;
+        // Use the dynamically updated offset
+        double angle = laser_min_angle_ + (i * pc_ang_sep_ * M_PI / 180.0) +
+                       robot_yaw + lidar_angle_offset_;
 
-        // Calculate point position in world frame
         double point_x = robot_x + filtered_ranges_[i] * cos(angle);
         double point_y = robot_y + filtered_ranges_[i] * sin(angle);
 
-        // Add to new points
         new_points.push_back(Point{point_x, point_y});
-
-        // Update occupancy grid
         updateGridCell(robot_x, robot_y, point_x, point_y);
     }
 
-    // Update point cloud map
-    // updatePointCloudMap(new_points);
     updatePointCloudFromGrid();
 }
 
@@ -666,12 +814,14 @@ void MCLNode::update()
     }
 
     // Compute raycast from current position for visualization
-    compute_raycast(map_, map_N_, local_map_, mcl_msg_.pose.pose, pc_ang_sep_);
+    compute_raycast(map_, map_N_, local_map_, pose_, pc_ang_sep_);
     fill_pc(local_map_pc_msg_, local_map_, local_map_N_,
             255, 0, 0, 255, 0.05);
 
     // Calculate control from odometry
     calcControl();
+
+    updateLidarAngleOffset();
 
     // If there's no significant movement, we might skip the update
     if (fabs(control_.forward) < 0.001 && fabs(control_.turn) < 0.001)

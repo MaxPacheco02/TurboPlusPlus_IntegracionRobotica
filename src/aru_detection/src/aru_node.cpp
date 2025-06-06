@@ -71,22 +71,21 @@ private:
     tf2::Quaternion quat;
 
     cv::Mat aruORI_;
-
     Eigen::Matrix3f aruORI_eigen;
     Eigen::Vector3f aruPOS_;
     float wayPointD_;
     float scale_;
 
     std::unordered_map<int, POINTS> aruId_;
-    std::unordered_map<int, std::deque<Eigen::Quaternionf>> quat_history_;
-    size_t max_quat_history_ = 10; 
 
-    cv::Mat CamMat;
-    cv::Mat CamDis;
+    std::unordered_map<int, std::deque<Eigen::Quaternionf>> quat_history_;
+    size_t max_quat_history_{10}; 
+    const float max_jump_rad{1.0f}; 
+
+    cv::Mat CamMat, CamDis;
 
     cv::Rect roi;
-    cv::Mat undistFrame;
-    cv::Mat cropped;
+    cv::Mat undistFrame, cropped;
 
     pzb_msgs::msg::ArucoMarker marker;
 
@@ -97,6 +96,12 @@ private:
         cv::Mat compressed_mat(msg->data); 
         cv::Mat frame = cv::imdecode(compressed_mat, cv::IMREAD_COLOR);
 
+        // cv::VideoCapture cap(0);
+
+        // while (rclcpp::ok()) {
+        //     cv::Mat frame;
+        //     if (!cap.read(frame)) continue;
+
         // RECORTAR LA IMAGEN
         cv::undistort(frame, undistFrame, CamMat, CamDis);
         cropped = frame(roi);
@@ -104,10 +109,9 @@ private:
         std::vector<std::tuple<cv::Vec3d, cv::Vec3d, int>> detections;
         std::tie(frame,detections) = aru_.pose_estimation(cropped, CamMat, CamDis);
 
-        for (int i = 0; i < detections.size(); i++) {
+        for (int i = 0; i < (int)detections.size(); i++) {
             auto &[rvec, tvec, id] = detections[i];
             std::cout<< "tvec : " << tvec <<std::endl;
-            std::cout<< "id : " << id <<std::endl;
             if (id != -1) {
                 cv::Rodrigues(rvec, aruORI_);
                 cv::cv2eigen(aruORI_, aruORI_eigen);
@@ -115,9 +119,9 @@ private:
                 
                 if(id != 0){ // FOR LOCALIZATION
                     pubPosArray(id);
+                }else if(nearest_pallet == true){ //FOR PALLETS
                     pubPosPallet();
-                }else{ //FOR PALLETS
-                    pubPosPallet();
+                    nearest_pallet = false;
                 } 
             }       
             else {
@@ -127,9 +131,13 @@ private:
         nearest_pallet = true;
 
         pos_pub_->publish(aruList_msg_);
-        aruList_msg_.markers.erase(aruList_msg_.markers.begin() + 1, aruList_msg_.markers.end());
+
+        if (aruList_msg_.markers.size() > 1) {
+            aruList_msg_.markers.erase(aruList_msg_.markers.begin() + 1, aruList_msg_.markers.end());
+        }
         cv::imshow("Imagen", frame);
         cv::waitKey(1);
+        // }
     }
 
     // PUBLISH ARUCOS FOR LOCALIZATION
@@ -150,16 +158,58 @@ private:
         marker.pose.position.y = smoother.ma_get(aruPOS_[1], 1) * scale_;
         marker.pose.position.z = smoother.ma_get(aruPOS_[2], 2) * scale_;
 
-        Eigen::Quaternionf q(aruORI_eigen);
-
-        // TO SMOOTH OUT ROTATIONS
-        // -------------------------------------------------------------------------------
+        // TO SMOOTH OUT ROTATIONS WITH SLERP (APPARENTLY)
         auto& q_deque = quat_history_[id];
+        Eigen::Quaternionf q(aruORI_eigen);
+        Eigen::Quaternionf q_avg = slerp_calc(q_deque, q);
+
+        marker.pose.orientation.x = q_avg.x();
+        marker.pose.orientation.y = q_avg.y();
+        marker.pose.orientation.z = q_avg.z();
+        marker.pose.orientation.w = q_avg.w();
+
+        aruList_msg_.markers.push_back(marker);
+    }
+
+    // PUBLISHER PARA ARUCO DE PALLET
+    void pubPosPallet(){
+
+        if(aruId_.find(0) == aruId_.end()) {
+            aruId_.emplace(0, POINTS());
+        }
+        POINTS& smoother = aruId_[0];
+
+        auto& q_deque = quat_history_[0];
+        Eigen::Quaternionf q(aruORI_eigen);
+        Eigen::Quaternionf q_avg = slerp_calc(q_deque, q);
+
+        pose_stamped_msg_.header.stamp = this->get_clock()->now();
+        pose_stamped_msg_.pose.position.x = smoother.ma_get(aruPOS_[0],0) * scale_;
+        pose_stamped_msg_.pose.position.y = smoother.ma_get(aruPOS_[1],1) * scale_;
+        pose_stamped_msg_.pose.position.z = smoother.ma_get(aruPOS_[2],2) * scale_;
+        pose_stamped_msg_.pose.orientation.x = q_avg.x();
+        pose_stamped_msg_.pose.orientation.y = q_avg.y();
+        pose_stamped_msg_.pose.orientation.z = q_avg.z();
+        pose_stamped_msg_.pose.orientation.w = q_avg.w();
+        pallet_pub_->publish(pose_stamped_msg_);
+    }
+
+
+    Eigen::Quaternionf slerp_calc(std::deque<Eigen::Quaternionf> &q_deque, const Eigen::Quaternionf& q){
+        // Check if current value is too far from the previous
+        if (!q_deque.empty()) {
+            float dot_product = q_deque.back().dot(q);
+            dot_product = std::clamp(dot_product, -1.0f, 1.0f);
+            float angle_diff = 2.0f * std::acos(std::abs(dot_product));
+
+            if (angle_diff > max_jump_rad) {
+                q_deque.clear();  // RESET
+            }
+        }
         if (q_deque.size() >= max_quat_history_) {
             q_deque.pop_front();
         }
         q_deque.push_back(q);
-
         // SLERP average
         Eigen::Quaternionf q_avg = q_deque.front();
         for (size_t i = 1; i < q_deque.size(); ++i) {
@@ -169,46 +219,21 @@ private:
             if (q_avg.dot(q_other) < 0.0f) {
                 q_other.coeffs() *= -1.0f;  
             }
-
             q_avg = q_avg.slerp(t, q_other);
         }
-
         q_avg.normalize();
-        // -------------------------------------------------------------------------------
-
-        marker.pose.orientation.x = q_avg.x() * scale_;
-        marker.pose.orientation.y = q_avg.y() * scale_;
-        marker.pose.orientation.z = q_avg.z() * scale_;
-        marker.pose.orientation.w = q_avg.w() * scale_;
-
-        aruList_msg_.markers.push_back(marker);
+        return q_avg;
     }
 
-    // PUBLISHER PARA ARUCO DE PALLET
-    void pubPosPallet(){
-        auto now = this->get_clock()->now();
-        std::cout<<"in"<<std::endl;
-        pose_stamped_msg_.header.stamp = now;
-        pose_stamped_msg_.pose.position.x = aruPOS_[0] * scale_;
-        pose_stamped_msg_.pose.position.y = aruPOS_[1] * scale_;
-        pose_stamped_msg_.pose.position.z = aruPOS_[2] * scale_;
-        Eigen::Quaternionf q(aruORI_eigen);
-        pose_stamped_msg_.pose.orientation.x = q.x();
-        pose_stamped_msg_.pose.orientation.y = q.y();
-        pose_stamped_msg_.pose.orientation.z = q.z();
-        pose_stamped_msg_.pose.orientation.w = q.w();
-        pallet_pub_->publish(pose_stamped_msg_);
-    }
 
     // SUBJECT TO CHANGE, NO REASON LEFT NOT TO PUBLISH AS STATIC TF IN URDF
     // ----------------------------------------------------------------------------
     void calCamSys() {
         quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
-        // 0.0872665+
         poseW_.id = -2;
-        poseW_.pose.position.x = 0.108;
+        poseW_.pose.position.x = 0.056;
         poseW_.pose.position.y = 0.0;
-        poseW_.pose.position.z = 0.044;
+        poseW_.pose.position.z = 0.153;
         poseW_.pose.orientation.x = quat[3];
         poseW_.pose.orientation.y = quat[2];
         poseW_.pose.orientation.z = quat[1];
@@ -225,38 +250,3 @@ int main(int argc, char **argv){
     rclcpp::shutdown();
     return 1;
 }
-
-
-
-// // count: 230
-// CamMat = (cv::Mat_<double>(3,3) << 640.19980366,0.0,356.53969343,
-//                                     0.0,631.41159734,241.09692846,
-//                                     0.0,0.0,1.0);
-
-// CamDis = (cv::Mat_<double>(1,5) << 0.10816224,0.02314439,0.0348719,0.01768096,-0.37449394);
-// roi = cv::Rect(18, 13, 614, 338);
-
-
-// // ONLY RIGHT SIDE FUCKED UP
-// CamMat = (cv::Mat_<double>(3,3) << 531.16390426,0.0,291.20749879,
-//                                             0.0,532.68741633,214.26092426,
-//                                             0.0,0.0,1.0);
-
-// CamDis = (cv::Mat_<double>(1,5) << 0.0106159534, 0.0619105354, 0.00180013372, -0.00799441912,-3.90060999);
-// roi = cv::Rect(33, 56, 520, 292);
-
-
-// // PARAMETROS DE CAMARA DE MI COMPU 
-// CamMat = (cv::Mat_<double>(3,3) << 641.32642765,0.0,299.43970036,
-//                                            0.0,639.79591303,342.58997503,
-//                                            0.0,0.0,1.0);
-
-// CamDis = (cv::Mat_<double>(1,5) << 0.08207287,-0.73105371,0.036685,-0.00448076,1.29510307);
-
-
-// ALL 100000000000 FOTOS
-// CamMat = (cv::Mat_<double>(3,3) << 469.87172695,0.0,314.5588278,
-//                                            0.0,597.02651066,160.386131,
-//                                            0.0,0.0,1.0);
-
-// CamDis = (cv::Mat_<double>(1,5) << 0.05792354,1.47119549,-0.02989828,-0.008226,-6.79787084);

@@ -17,7 +17,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    ns_arg = DeclareLaunchArgument('ns_', default_value='pzb')
+    ns_arg = DeclareLaunchArgument('ns_', default_value='')
 
     reactive_navigation_node = Node(
         package='pzb_navigation',

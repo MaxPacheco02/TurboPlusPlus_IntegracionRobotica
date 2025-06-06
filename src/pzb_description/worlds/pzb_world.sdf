@@ -19,7 +19,9 @@
         </gz-gui>
 
         <engine>ogre2</engine>
-        <scene>scene</scene>
+        <scene>
+          <grid>false</grid>
+        </scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
         <background_color>0.8 0.8 0.8</background_color>
         <camera_pose>
@@ -373,7 +375,7 @@
             </friction>
           </surface>
         </collision>
-        <visual name="visual">
+        <!-- <visual name="visual">
           <geometry>
             <plane>
               <normal>0 0 1</normal>
@@ -385,7 +387,7 @@
             <diffuse>0.1 0.1 0.1 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
-        </visual>
+        </visual> -->
       </link>
     </model>
 

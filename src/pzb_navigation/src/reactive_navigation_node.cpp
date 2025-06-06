@@ -46,10 +46,12 @@ public:
 
     ReactiveNavigationNode() : Node("reactive_navigation_node")
     {
-        this->declare_parameter("bug_algorithm", 2);
-        
+        this->declare_parameter("bug_algorithm", 0);
+        this->declare_parameter("wall_distance_thresh", 0.35);
+
         // Initialize algorithm type based on parameter
         bug_algorithm = this->get_parameter("bug_algorithm").as_int();
+        wall_dist_thresh = this->get_parameter("wall_distance_thresh").as_double();
 
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
             "/lidar", 10,
@@ -61,7 +63,8 @@ public:
                 double limit_range_max = 1.0;
 
                 // Reduce skip_rays to get better coverage
-                skip_rays = static_cast<int>((scan_filter_angle * M_PI / 180.0) / msg.angle_increment);
+                // skip_rays = static_cast<int>((scan_filter_angle * M_PI / 180.0) / msg.angle_increment);
+                skip_rays = 1.0;
                 angle_increment = msg.angle_increment * skip_rays;
 
                 laserscan_vector.clear();
@@ -74,9 +77,10 @@ public:
                     double angle = msg.angle_min + i * msg.angle_increment;
                     angle = normalize_angle(angle);
 
-                    if (std::isfinite(msg.ranges[i]) &&
-                        msg.ranges[i] >= msg.range_min &&
-                        msg.ranges[i] <= limit_range_max
+                    if (std::isfinite(msg.ranges[i])
+                        // &&
+                        // msg.ranges[i] >= msg.range_min &&
+                        // msg.ranges[i] <= limit_range_max
                         // &&  std::fabs(angle) < M_PI_2
                     )
                     {
@@ -85,12 +89,12 @@ public:
 
                         if (nearest_index == -1 || msg.ranges[i] < laserscan_vector[nearest_index])
                         {
-                            nearest_index = laserscan_vector.size();
+                            nearest_index = laserscan_vector.size() - 1;
                         }
                     }
                 }
 
-                RCLCPP_INFO(this->get_logger(), "Processed %zu valid points", laserscan_vector.size());
+                // RCLCPP_INFO(this->get_logger(), "Processed %zu valid points", laserscan_vector.size());
                 // for (size_t i = 0; i < std::min(size_t(5), laserscan_vector.size()); ++i)
                 // {
                 //     RCLCPP_INFO(this->get_logger(), "Point %zu: range=%.3f, angle=%.1f°",
@@ -119,7 +123,7 @@ public:
             });
 
         nav_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "nav/goal_pose", 10,
+            "/avoidance/goal_pose", 10,
             [this](const geometry_msgs::msg::PoseStamped &msg)
             {
                 received_goal = true;
@@ -164,7 +168,7 @@ private:
     double received_goal{false};
     NavState bug_state;
     int bug_algorithm{2};
-
+    double wall_dist_thresh{0.2};
     int skip_rays{1};
 
     int color_list[6][4]{
@@ -178,7 +182,7 @@ private:
     std::map<std::string, MarkerProps> marker_type = {
         {"round", MarkerProps{2, 0.5, 0.5, 0.5, 0}},
         {"boat", MarkerProps{2, 1.0, 1.0, 1.0, 0}},
-        {"marker", MarkerProps{3, 0.1, 0.1, 0.1, 0.25}},
+        {"marker", MarkerProps{3, 0.03, 0.03, 0.03, 0.25}},
         {"picture", MarkerProps{1, 0.5, 0.5, 0.5, 0.25}},
     };
 
@@ -193,7 +197,7 @@ private:
             b{color_list[color][2]},
             a{color_list[color][3]};
 
-        marker.header.frame_id = "pzb/base_axis";
+        marker.header.frame_id = "base_axis";
         marker.color = std_msgs::build<std_msgs::msg::ColorRGBA>().r(r).g(g).b(b).a(a);
         marker.action = 0;
         marker.id = marker_arr.markers.size();
@@ -205,6 +209,12 @@ private:
         marker_arr.markers.push_back(marker);
     }
 
+    void add_marker(Eigen::Vector3f p, int color)
+    {
+        Eigen::Vector2f pp{p(0), p(1)};
+        add_marker(pp, color);
+    }
+
     void update()
     {
         if (!received_goal)
@@ -212,7 +222,7 @@ private:
             RCLCPP_ERROR(this->get_logger(), "Goal not received");
             return;
         }
-        if (nearest_index >= static_cast<int>(laserscan_vector.size()))
+        if (nearest_index >= static_cast<int>(laserscan_vector.size()) || laserscan_vector.size() == 0)
         {
             RCLCPP_ERROR(this->get_logger(), "Nearest scan index unsuitable: %d >= %d", nearest_index, laserscan_vector.size());
             return;
@@ -220,13 +230,18 @@ private:
 
         marker_arr.markers.clear();
 
+        double global_heading = calculate_heading(pose_, goal_pose_);
+        double local_heading = normalize_angle(global_heading - pose_(2));
+
         bool path_clear = is_goal_clear();
         RCLCPP_INFO(this->get_logger(), "Path clear? %d", path_clear);
+        RCLCPP_INFO(this->get_logger(), "Cond 2: %d", laserscan_vector[nearest_index] < wall_dist_thresh);
+        RCLCPP_INFO(this->get_logger(), "Cond 3: %d", std::fabs(ang_distance(scan_angles[nearest_index], local_heading)) < 2 * M_PI / 8);
 
         bug_algorithm = this->get_parameter("bug_algorithm").as_int();
 
         // Discuss machine's state
-        if (!path_clear)
+        if ((!path_clear) || ((laserscan_vector[nearest_index] < wall_dist_thresh) && (std::fabs(ang_distance(scan_angles[nearest_index], local_heading)) < 3 * M_PI / 8)))
             bug_state = NavState::SURROUND;
         else
         {
@@ -254,8 +269,21 @@ private:
             break;
         }
 
+        // TODO: Remove
+
+        add_marker(get_point(0), 4);
+        add_marker(get_point(laserscan_vector.size() - 1), 4);
+        add_marker(get_point(-angle_min / angle_increment), 3);
+
         marker_pub_->publish(marker_arr);
         pid_ref_pub_->publish(pid_ref_msg);
+    }
+
+    int get_min(std::vector<double> v)
+    {
+        if (v[0] < v[1])
+            return 0;
+        return 1;
     }
 
     double calculate_crosstrack_error(const Eigen::Vector3f &pose,
@@ -321,15 +349,27 @@ private:
             }
         }
 
+        // ang = min + inc * i
+        int idx = (local_heading - angle_min)  /angle_increment;
+
         // RCLCPP_INFO(this->get_logger(), "Local heading towards goal: %f", local_heading);
         // RCLCPP_INFO(this->get_logger(), "Nearest registered heading: %f", scan_angles[closest_idx]);
         // RCLCPP_INFO(this->get_logger(), "Closest ang's error: %f", min_ang_distance);
 
-        if (std::fabs(min_ang_distance) > 0.5)
-            return true; // The nearest obstacle is on a different direction than the goal
+        // if (std::fabs(min_ang_distance) > M_PI)
+        //     return true; // The nearest obstacle is on a different direction than the goal
 
-        if (laserscan_vector[closest_idx] > goal_dist || 
-            laserscan_vector[closest_idx] > 0.5)
+        std::cout << "goal dist: " << goal_dist << std::endl;
+        Eigen::Vector2f goals_local_v = get_point(idx);
+        std::cout << "goal local head" << goals_local_v(0) << "," << goals_local_v(1) << std::endl;
+        std::cout << "inf goal?: " << (laserscan_vector[idx] > 20.0) << std::endl;
+        add_marker(goals_local_v, 3);
+
+        // This is too big. Simulating infinite
+        if((laserscan_vector[idx] > 20.0) || goals_local_v.norm() < 0.01)
+            return true;
+        if (laserscan_vector[idx] > goal_dist ||
+            laserscan_vector[idx] > 1.0)
             return true; // There is an obstacle on the goal's direction but its further than the goal
         return false;    // The is an obstacle between the pzb and the goal
     }
@@ -341,16 +381,35 @@ private:
             std::pow(p1(1) - p2(1), 2));
     }
 
+    double dist(Eigen::Vector2f p1, Eigen::Vector2f p2)
+    {
+        return std::sqrt(
+            std::pow(p1(0) - p2(0), 2) +
+            std::pow(p1(1) - p2(1), 2));
+    }
+
     double ang_distance(double ang1, double ang2)
     {
         return normalize_angle(ang1 - ang2);
     }
 
-    void surround()
+    Eigen::Vector3f get_offset_point(int base, int sense)
     {
-        int next_index = (nearest_index + 1) % laserscan_vector.size();
-        Eigen::Vector2f p1 = get_point(nearest_index);
+        int reversed = 1;
+        int sense_addition = sense;
+        Eigen::Vector2f p1 = get_point(base);
+
+        int next_index = (base + sense_addition + laserscan_vector.size()) % laserscan_vector.size();
         Eigen::Vector2f p2 = get_point(next_index);
+
+        // In case we are near a corner, the next idx might lead to a very far away point.
+        if (dist(p1, p2) > 0.1)
+        {
+            // reversed = -1;
+            next_index = (base - sense_addition + laserscan_vector.size()) % laserscan_vector.size();
+            p2 = p1;
+            p1 = get_point(next_index);
+        }
 
         // Calculate tangent and normal
         Eigen::Vector2f tangent = (p2 - p1).normalized();
@@ -359,32 +418,76 @@ private:
 
         // Calculate midpoint and offset
         Eigen::Vector2f midpoint = (p1 + p2) / 2.0;
-        double obstacle_distance = (laserscan_vector[nearest_index] + laserscan_vector[next_index]) / 2.0;
+        double obstacle_distance = (laserscan_vector[base] + laserscan_vector[next_index]) / 2.0;
 
         // Dynamic offset based on distance
-        double base_offset = 0.3;
+        double base_offset = 0.25;
         double scale_factor = 0.2;
-        double offset = std::min(base_offset + scale_factor * obstacle_distance, 0.8);
+        double offset = std::min(base_offset + scale_factor * obstacle_distance, 0.3);
 
-        // First calculate the offset perpendicular to the wall
-        Eigen::Vector2f offset_point = midpoint + offset * normal;
+        // Calculate the offset perpendicular to the wall
+        Eigen::Vector2f offset_point0 = p1 + offset * normal * sense * reversed;
 
-        double forward_offset = 0.5;                               // Length of the "peek" forward
+        double forward_offset = 0.1;                               // Length of the "peek" forward
         Eigen::Vector2f forward_vector = forward_offset * tangent; // Use tangent for forward motion
-        Eigen::Vector2f final_point = offset_point + forward_vector;
 
-        Eigen::Vector3f local_wp;
-        local_wp.head<2>() = final_point;
+        Eigen::Vector2f offset_point = offset_point0 + forward_vector;
+
+        add_marker(p1, 0);
+        add_marker(p2, 1);
+        add_marker(offset_point0, 2);
+        add_marker(offset_point, 3);
+
+        return Eigen::Vector3f{offset_point(0), offset_point(1), 0};
+    }
+
+    void surround()
+    {
+        int senses[2]{-1, 1};
+        Eigen::Vector3f offset_point1 = get_offset_point(nearest_index, senses[0]);
+        Eigen::Vector3f offset_point2 = get_offset_point(nearest_index, senses[1]);
+
+        // Choose correct sense based on which one is closer to the goal ...
+        // std::vector<double> points_v{
+        //     dist(pose_ + rotM_ * offset_point1, goal_pose_),
+        //     dist(pose_ + rotM_ * offset_point2, goal_pose_)};
+
+        // ... or choose correct sense based on which one requires the least yaw
+        std::vector<double> points_v{
+            std::fabs(normalize_angle(std::atan2(offset_point1(1), offset_point1(0)))),
+            std::fabs(normalize_angle(std::atan2(offset_point2(1), offset_point2(0))))};
+
+        // RCLCPP_ERROR(this->get_logger(), "Heading options: %f, %f", points_v[0], points_v[1]);
+
+
+        std::vector<Eigen::Vector3f> point_list{offset_point1, offset_point2};
+
+        int correct_sense = get_min(points_v);
+
+        Eigen::Vector3f local_wp = point_list[correct_sense];
+
+        Eigen::Vector2f p1 = get_point(nearest_index);
+        int next_idx = (nearest_index + senses[correct_sense] + laserscan_vector.size()) % laserscan_vector.size();
+        Eigen::Vector2f p2 = get_point(next_idx);
+
+        if (dist(p1, p2) > 0.1)
+        {
+            next_idx = (nearest_index - senses[correct_sense] + laserscan_vector.size()) % laserscan_vector.size();
+            p2 = p1;
+            p1 = get_point(next_idx);
+        }
+
         local_wp(2) = calculate_heading(p1, p2);
 
         Eigen::Vector3f wp = pose_ + rotM_ * local_wp;
 
         set_pid_ref(wp);
 
-        add_marker(p1, 0);
-        add_marker(p2, 1);
-        add_marker(offset_point, 2);
-        add_marker(final_point, 3);
+        // add_marker(p1, 0);
+        // add_marker(p2, 1);
+        // add_marker(point_list[0], 3);
+        // add_marker(point_list[1], 3);
+        // add_marker(final_point, 3);
     }
 
     double calculate_heading(double x1, double y1, double x2, double y2)
@@ -421,6 +524,24 @@ private:
         Eigen::Vector2f point;
         point << r * std::cos(theta),
             r * std::sin(theta);
+
+        return point;
+    }
+
+    Eigen::Vector3f get_point3(int idx)
+    {
+        if (idx < 0 || idx >= static_cast<int>(laserscan_vector.size()))
+        {
+            RCLCPP_ERROR(this->get_logger(), "Invalid index in get_point: %d", idx);
+            return Eigen::Vector3f::Zero();
+        }
+
+        double r = laserscan_vector[idx];
+        double theta = scan_angles[idx];
+
+        Eigen::Vector3f point;
+        point << r * std::cos(theta),
+            r * std::sin(theta), 0;
 
         return point;
     }

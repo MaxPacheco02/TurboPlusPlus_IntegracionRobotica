@@ -15,14 +15,14 @@ class FramePublisher : public rclcpp::Node
 {
 public:
   FramePublisher()
-  : Node("pzb_tf2_publisher")
+      : Node("pzb_tf2_publisher")
   {
     ns_ = this->get_namespace();
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10,
+        "/odom", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(),
         std::bind(&FramePublisher::handle_pzb_pose, this, std::placeholders::_1));
 
     pose_path_pub_ = this->create_publisher<nav_msgs::msg::Path>(
@@ -31,19 +31,20 @@ public:
     pose_stamped_tmp_.header.frame_id = "odom";
     pose_path.header.frame_id = "odom";
     pose_path.header.stamp = FramePublisher::now();
-    std::cout<<"afuera"<<std::endl;
   }
 
 private:
   void handle_pzb_pose(const std::shared_ptr<nav_msgs::msg::Odometry> msg)
   {
-
-    std::cout<<"adentro"<<std::endl;
     // Update TF2 msg
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
     t.header.frame_id = "odom";
-    t.child_frame_id = ns_ + "/base_axis";
+
+    if (ns_ == "" || ns_ == "/")
+      t.child_frame_id = "base_axis";
+    else
+      t.child_frame_id = ns_ + "/base_axis";
 
     t.transform.translation.x = msg->pose.pose.position.x;
     t.transform.translation.y = msg->pose.pose.position.y;
@@ -61,14 +62,14 @@ private:
     pose_stamped_tmp_.pose.position.x = msg->pose.pose.position.x;
     pose_stamped_tmp_.pose.position.y = msg->pose.pose.position.y;
     pose_path.poses.push_back(pose_stamped_tmp_);
-    
+
     // Erase elements when path is too long
-    if(pose_path.poses.size() > 5000){
-      pose_path.poses.erase(pose_path.poses.begin(), pose_path.poses.begin()+1);
+    if (pose_path.poses.size() > 5000)
+    {
+      pose_path.poses.erase(pose_path.poses.begin(), pose_path.poses.begin() + 1);
     }
 
     pose_path_pub_->publish(pose_path);
-
   }
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -80,7 +81,7 @@ private:
   std::string ns_;
 };
 
-int main(int argc, char * argv[])
+int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<FramePublisher>());

@@ -15,7 +15,7 @@ public:
         markerLength_local_ = 95.0;
 
         // PALLET MARKER SIZE 
-        markerLength_pal_ = 30.0;
+        markerLength_pal_ = 25.0;
 
         objp_local_ = (cv::Mat_<float>(4,3) <<
             -markerLength_local_/2,  markerLength_local_/2, 0,
@@ -49,7 +49,7 @@ public:
         detector_->detectMarkers(gray, corners, ids);
 
         if (!corners.empty()) {
-            for (int i = 0; i < ids.size(); i++) {
+            for (int i = 0; i < (int)ids.size(); i++) {
                 int marker_id = ids[i];
                 aruSeen_[marker_id].push_back(true);
                 

@@ -23,13 +23,13 @@ public:
         std::vector<std::string> param_names = {"id1", "id2", "id3", "id4", "id5", "id6", "id7", 
                                                 "id8", "id9", "id10", "id11", "id12", "id13"};
 
-        for(int i = 0; i < param_names.size(); i++){
+        for(int i = 0; i < (int)param_names.size(); i++){
             declare_marker_params(param_names[i]);
         }
 
         static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
-        for(unsigned long int i = 0; i < param_names.size(); i++){
+        for(int i = 0; i < (int)param_names.size(); i++){
             std::string id = param_names[i];
         
             std::vector<double> pos = this->get_parameter(id+".position").as_double_array();
@@ -61,13 +61,6 @@ public:
         pallet_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
           "pzb/pallet_pos",10,
           std::bind(&AruPublisher::handle_pallet_sys, this, _1));
-
-        t_cam.header.frame_id = "pzb/base_link";
-        t_cam.child_frame_id = "camera";
-        t_aru.header.frame_id = "camera";
-        t_aru.child_frame_id = "aruco_center";
-        t_pal.header.frame_id = "camera";
-        t_pal.child_frame_id = "pallet_aru";
     }
 
 private:
@@ -93,6 +86,8 @@ private:
     void handle_aru_sys(const std::shared_ptr<pzb_msgs::msg::ArucoList> msg){
         // ARU SYSTEM BROADCAST
         // BASE -> CAMERA 
+        t_cam.header.frame_id = "pzb/base_axis";
+        t_cam.child_frame_id = "camera";
         t_cam.header.stamp = this->get_clock()->now();
 
         t_cam.transform.translation.x = msg->markers[0].pose.position.x;
@@ -106,6 +101,8 @@ private:
 
         tf_broadcaster_->sendTransform(t_cam); 
 
+        t_aru.header.frame_id = "camera";
+        t_aru.child_frame_id = "aruco_center";
         t_aru.header.stamp = this->get_clock()->now();
 
         // REF -> ARUCO CENTER
@@ -133,6 +130,8 @@ private:
     }
 
     void handle_pallet_sys(const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg){
+        t_pal.header.frame_id = "camera";
+        t_pal.child_frame_id = "pallet_aru";
         t_pal.header.stamp = this->get_clock()->now();
         t_pal.transform.translation.x = msg->pose.position.x;
         t_pal.transform.translation.y = msg->pose.position.y;
