@@ -22,18 +22,21 @@ public:
 
         using namespace std::placeholders;
 
-        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
+        pallet_pose_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pallet/goal_pose", 10);
 
         H_T_odom.setIdentity();
         H_T_base_axis.setIdentity();
         H_T_aru_odom.setIdentity();
+        H_T_aru.setIdentity();
         
         // MATRIZ HOMOGENEA DE CAMARA
-        quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        quat.setRPY(1.5708f - 0.174533f, -M_PI, -M_PI - 1.5708f);
         Eigen::Quaternionf q_cam(quat.w(),quat.x(),quat.y(),quat.z());
         Rc = q_cam.toRotationMatrix();
         H_T_base_axis.block<3, 3>(0,0) = Rc;
         H_T_base_axis.block<3, 1>(0,3) << 0.056, 0.0, 0.195;
+
+        pos_waypoint << 0.4, 0.0, 0.0, 1.0;
         
         // PARA CORRECION DE ROTACION DE ARUCO
         R_corr_aru = Eigen::AngleAxisf(roll_correction,  Eigen::Vector3f::UnitX()) *
@@ -63,10 +66,10 @@ private:
     tf2::Quaternion quat;
 
     Eigen::Matrix3f Ra, Ro, Rc, R_aru_odom, R_corr_aru, R_corr_odom, R, R_final;
-    Eigen::Vector4f pos_aru, pos_aru_odom;
+    Eigen::Vector4f pos_aru, pos_aru_odom, pos_waypoint;
     Eigen::Vector3f pos_odom;
 
-    Eigen::Matrix4f H_T_odom, H_T_base_axis, H_T_aru_odom;
+    Eigen::Matrix4f H_T_odom, H_T_base_axis, H_T_aru_odom, H_T_aru;
 
     float roll_correction{-M_PI / 2.0f};  
     float yaw_correction{-M_PI / 2.0f};
@@ -100,17 +103,20 @@ private:
         Eigen::Quaternionf qa(msg.pose.orientation.w, 
                             msg.pose.orientation.x,     
                             msg.pose.orientation.y,     
-                            msg.pose.orientation.z);           
+                            msg.pose.orientation.z);      
 
         R = qa.toRotationMatrix();
         R_final = R * R_corr_aru;
         Ra = R_final;
 
-        H_T_aru_odom = H_T_odom * H_T_base_axis;
-        
-        pos_aru_odom.head<3>() = H_T_aru_odom.block<3,3>(0,0) * pos_aru.head<3>() + H_T_aru_odom.block<3,1>(0,3); //pos_aru_odom = H_T_aru_odom * pos_aru;
-        R_aru_odom = Ro*Rc*Ra;
+        H_T_aru.block<3, 3>(0,0) = Ra;
+        H_T_aru.block<3, 1>(0,3) = pos_aru.head<3>();
 
+        H_T_aru_odom = H_T_odom * H_T_base_axis * H_T_aru;
+        
+        pos_aru_odom = H_T_aru_odom  * pos_waypoint; //pos_aru_odom.head<3>() = H_T_aru_odom.block<3,3>(0,0) * pos_aru.head<3>() + H_T_aru_odom.block<3,1>(0,3); 
+        
+        R_aru_odom = Ro*Rc*Ra;
         R_final = R_aru_odom * R_corr_odom;
         
         Eigen::Quaternionf q(R_final);
@@ -125,6 +131,9 @@ private:
         pose_stamped_msg_.pose.orientation.w = q.w();
 
         pallet_pose_->publish(pose_stamped_msg_);
+
+        H_T_aru_odom = H_T_odom * H_T_base_axis;
+        pos_aru_odom = H_T_aru_odom  * pos_aru;
 
         t_aru.header.frame_id = "odom";
         t_aru.child_frame_id = "waypoint";

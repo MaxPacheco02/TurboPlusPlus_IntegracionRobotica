@@ -39,7 +39,7 @@ public:
 
         wayPointD_ = 100.0;
         scale_ = 0.001f;
-        
+
         // PARAMETROS DE LA CAMARA DEL PZB
         CamMat = (cv::Mat_<double>(3,3) << 640.19980366,0.0,356.53969343,
                                            0.0,631.41159734,241.09692846,
@@ -229,15 +229,15 @@ private:
     // SUBJECT TO CHANGE, NO REASON LEFT NOT TO PUBLISH AS STATIC TF IN URDF
     // ----------------------------------------------------------------------------
     void calCamSys() {
-        quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        quat.setRPY(1.5708f - 0.174533f, -M_PI, -M_PI - 1.5708f); //inclinacion de 10 grados  + 0.174533
         poseW_.id = -2;
         poseW_.pose.position.x = 0.056;
         poseW_.pose.position.y = 0.0;
         poseW_.pose.position.z = 0.195;
-        poseW_.pose.orientation.x = quat[3];
-        poseW_.pose.orientation.y = quat[2];
-        poseW_.pose.orientation.z = quat[1];
-        poseW_.pose.orientation.w = quat[0];
+        poseW_.pose.orientation.x = quat.x();
+        poseW_.pose.orientation.y = quat.y();
+        poseW_.pose.orientation.z = quat.z();
+        poseW_.pose.orientation.w = quat.w();
         aruList_msg_.markers.push_back(poseW_);
     }
     // ----------------------------------------------------------------------------
