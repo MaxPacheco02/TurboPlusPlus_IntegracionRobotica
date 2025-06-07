@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js ROS2 Puzzlebot</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            color: white;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #00ff88;
+            z-index: 100;
+            min-width: 300px;
+        }
+
+        #ros-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid #ff4444;
+            font-size: 12px;
+        }
+
+        .connected {
+            border-color: #00ff88 !important;
+        }
+
+        .status-line {
+            margin: 5px 0;
+        }
+
+        h3 {
+            margin: 0 0 10px 0;
+            color: #00ff88;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #00ff88;
+            max-width: 350px;
+        }
+
+        button {
+            background: #00ff88;
+            color: black;
+            border: none;
+            padding: 8px 12px;
+            margin: 2px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        button:hover {
+            background: #00cc66;
+        }
+
+        input[type="range"] {
+            width: 200px;
+            margin: 5px 0;
+        }
+
+        input[type="file"] {
+            background: #333;
+            color: white;
+            border: 1px solid #666;
+            padding: 4px;
+            border-radius: 3px;
+            margin: 2px 0;
+            font-size: 10px;
+            width: 100%;
+        }
+
+        .file-section {
+            margin: 8px 0;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+        }
+
+        .file-section h4 {
+            margin: 0 0 5px 0;
+            color: #00ff88;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+        <h3>🤖 ROS2 Puzzlebot</h3>
+        <div class="status-line">Position: <span id="current-position">x:0.0 y:0.0</span></div>
+        <div class="status-line">Robot Rotation: <span id="robot-rotation">0.0</span>°</div>
+        <div class="status-line">Messages Received: <span id="msg-count">0</span></div>
+        <div class="status-line">Last Message: <span id="last-msg">None</span></div>
+    </div>
+
+    <div id="ros-status">
+        <div>🔴 ROS2: Disconnected</div>
+        <div>WebSocket: ws://localhost:9090</div>
+    </div>
+
+    <div id="controls">
+        <h3>🌍 Global Controls</h3>
+        <button onclick="goHome()">🏠 Home View</button>
+        <button onclick="toggleFollowRobot()">📍 Follow Robot</button>
+        <button onclick="toggleTopView()">🔄 Top View</button>
+        <button onclick="resetView()">🎯 Reset View</button>
+        <br><br>
+
+        <div class="file-section">
+            <h4>🏢 Floor Texture</h4>
+            <button onclick="resetFloor()">🔄 Reset Floor</button>
+            <button onclick="toggleFloorGrid()">📏 Toggle Grid</button>
+            <button onclick="loadPresetMap()">🗺️ Load Preset</button>
+            <br>
+            <button onclick="scaleTexture(0.1)">🔍 Scale +</button>
+            <button onclick="scaleTexture(-0.1)">🔍 Scale -</button>
+            <button onclick="rotateTexture(Math.PI/12)">↻ Rotate +</button>
+            <button onclick="rotateTexture(-Math.PI/12)">↺ Rotate -</button>
+            <br>
+            <input type="file" id="floor-image" accept="image/*" onchange="loadFloorTexture(this)">
+        </div>
+
+        <div class="file-section">
+            <h4>🏢 Floor Texture</h4>
+            <button onclick="resetFloor()">🔄 Reset Floor</button>
+            <button onclick="toggleFloorGrid()">📏 Toggle Grid</button>
+            <button onclick="loadPresetMap()">🗺️ Load Preset</button>
+            <br>
+            <input type="file" id="floor-image" accept="image/*" onchange="loadFloorTexture(this)">
+        </div>
+
+        <br>
+        <div style="font-size: 10px; margin-top: 5px;">
+            🖱️ Mouse: Drag to orbit • Scroll to zoom • Right-click drag to pan
+        </div>
+    </div>
+
+    <!-- Three.js and GLTFLoader from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // Make GLTFLoader and OrbitControls available globally
+        window.GLTFLoader = GLTFLoader;
+        window.OrbitControls = OrbitControls;
+
+        // Initialize after modules are loaded
+        init();
+    </script>
+
+    <script>
+        // Three.js global variables
+        let textureScale = 6;
+        let textureRotation = 0;
+        let scene, camera, renderer, puzzlebot, controls;
+        let rotationSpeed = 0.0;
+        let messageCount = 0;
+        let gltfLoader;
+        let floorPlane, gridHelper;
+        let floorTexture = null;
+        let showGrid = true;
+
+        let lastOdomUpdate = 0;
+        const odomUpdateInterval = 50; // Update every 50ms (20 FPS)
+
+        // Store original camera position for home button
+        let originalCameraPosition = { x: 3, y: 2, z: 3 };
+        let originalCameraTarget = { x: 0, y: 0, z: 0 };
+
+        // ROS2 variables
+        let rosSocket = null;
+        let isConnected = false;
+
+        // Color array for fun
+        const colors = [0x4169E1, 0x9932cc, 0x00ff88, 0xff4444, 0xffa500, 0x8fbc8f];
+        let currentColorIndex = 0;
+
+        // Initialize Three.js scene
+        function initThreeJS() {
+            console.log('🤖 Initializing Three.js scene for Puzzlebot...');
+
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(originalCameraPosition.x, originalCameraPosition.y, originalCameraPosition.z);
+            camera.lookAt(originalCameraTarget.x, originalCameraTarget.y, originalCameraTarget.z);
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Initialize OrbitControls
+            if (window.OrbitControls) {
+                controls = new window.OrbitControls(camera, renderer.domElement);
+
+                // Configure controls
+                controls.enableDamping = true; // Smooth camera movements
+                controls.dampingFactor = 0.05;
+                controls.screenSpacePanning = false;
+
+                // Set limits
+                controls.minDistance = 0.1;
+                controls.maxDistance = 50;
+                controls.maxPolarAngle = Math.PI / 2; // Prevent going below ground
+
+                // Set target to center
+                controls.target.set(originalCameraTarget.x, originalCameraTarget.y, originalCameraTarget.z);
+                controls.update();
+
+                console.log('✅ OrbitControls initialized');
+                console.log('🖱️ Mouse controls: Left drag = orbit, Right drag = pan, Scroll = zoom');
+            } else {
+                console.log('⚠️ OrbitControls not available');
+            }
+
+            // Initialize GLTF loader if available
+            if (window.GLTFLoader) {
+                gltfLoader = new window.GLTFLoader();
+                console.log('✅ GLTFLoader initialized');
+
+                // Try to load default Puzzlebot model
+                loadDefaultGLTF();
+            } else {
+                console.log('⚠️ GLTFLoader not available, using fallback robot');
+                // Keep the fallback robot for now
+            }
+
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 50;
+            directionalLight.shadow.camera.left = -10;
+            directionalLight.shadow.camera.right = 10;
+            directionalLight.shadow.camera.top = 10;
+            directionalLight.shadow.camera.bottom = -10;
+            scene.add(directionalLight);
+
+            // Create floor plane
+            createFloorPlane();
+
+            loadPresetMap();
+
+
+            // Add grid helper
+            gridHelper = new THREE.GridHelper(10, 20, 0x555555, 0x333333);
+            gridHelper.position.y = -0.048;
+            gridHelper.visible = false;  // Add this line
+            scene.add(gridHelper);
+
+            // Add rotation anchor indicator
+            const anchorGeometry = new THREE.SphereGeometry(0.01, 16, 16);
+            const anchorMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.4
+            });
+            const anchorIndicator = new THREE.Mesh(anchorGeometry, anchorMaterial);
+            scene.add(anchorIndicator);
+            window.anchorIndicator = anchorIndicator; // Make it globally accessible
+            window.anchorIndicator.visible = false; // Start hidden
+
+            console.log('✅ Three.js scene initialized');
+        }
+
+        // Create floor plane
+        function createFloorPlane() {
+            // Remove existing floor if it exists
+            if (floorPlane) {
+                scene.remove(floorPlane);
+            }
+
+            const planeGeometry = new THREE.PlaneGeometry(10, 10);
+            const planeMaterial = new THREE.MeshPhongMaterial({
+                color: 0x666666,
+                transparent: true
+            });
+
+            floorPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+            floorPlane.rotation.x = -Math.PI / 2;
+            floorPlane.position.y = -0.049;
+            floorPlane.receiveShadow = true;
+            scene.add(floorPlane);
+
+            console.log('🏢 Floor plane created');
+        }
+
+        function loadPresetMap() {
+            const loader = new THREE.TextureLoader();
+            loader.load('image/presa_floor.png',
+                function (texture) {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    texture.repeat.set(1.0, 1.0);
+                    texture.rotation = 0;
+                    texture.center.set(0.5, 0.5); // Rotate around center
+                    texture.flipY = false;
+
+                    floorTexture = texture;
+                    if (floorPlane) {
+                        floorPlane.material.map = texture;
+                        floorPlane.material.color.setHex(0xffffff);
+                        floorPlane.material.needsUpdate = true;
+                    }
+                    console.log('✅ Preset map loaded');
+                },
+                undefined,
+                function (error) {
+                    console.log('❌ Could not load preset map, using default floor');
+                }
+            );
+
+            scaleTexture(0);
+        }
+
+        function rotateTexture(delta) {
+            textureRotation += delta;
+            updateTextureTransform();
+            console.log('🔄 Texture rotation:', (textureRotation * 180 / Math.PI).toFixed(1), '°');
+        }
+
+        function scaleTexture(delta) {
+            textureScale = Math.max(0.1, textureScale + delta);
+            if (floorPlane) {
+                floorPlane.scale.set(textureScale, textureScale, textureScale);
+            }
+            console.log('🔍 Floor scale:', textureScale.toFixed(2));
+        }
+
+        function updateTextureTransform() {
+            if (floorTexture) {
+                // Don't change repeat - keep it at 1,1
+                floorTexture.rotation = textureRotation;
+                floorTexture.needsUpdate = true;
+            }
+        }
+
+        // Load floor texture from file
+        function loadFloorTexture(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            console.log('🖼️ Loading floor texture:', file.name);
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const loader = new THREE.TextureLoader();
+                loader.load(e.target.result,
+                    function (texture) {
+                        // Configure texture
+                        texture.wrapS = THREE.RepeatWrapping;
+                        texture.wrapT = THREE.RepeatWrapping;
+                        texture.repeat.set(1, 1); // Adjust repeat as needed
+                        texture.flipY = false;
+
+                        // Store reference
+                        floorTexture = texture;
+
+                        // Apply to floor
+                        if (floorPlane) {
+                            floorPlane.material.map = texture;
+                            floorPlane.material.color.setHex(0xffffff); // Reset color to white for proper texture display
+                            floorPlane.material.needsUpdate = true;
+                        }
+
+                        console.log('✅ Floor texture loaded and applied');
+                    },
+                    function (progress) {
+                        console.log('Loading texture progress:', progress);
+                    },
+                    function (error) {
+                        console.error('❌ Error loading floor texture:', error);
+                        alert('Error loading image. Please try a different image file.');
+                    }
+                );
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        // Reset floor to default
+        function resetFloor() {
+            if (floorPlane) {
+                floorPlane.material.map = null;
+                floorPlane.material.color.setHex(0x666666);
+                floorPlane.material.needsUpdate = true;
+                floorTexture = null;
+                console.log('🔄 Floor reset to default');
+            }
+
+            // Clear file input
+            document.getElementById('floor-image').value = '';
+        }
+
+        // Toggle grid visibility
+        function toggleFloorGrid() {
+            showGrid = !showGrid;
+            if (gridHelper) {
+                gridHelper.visible = showGrid;
+                console.log('📏 Grid', showGrid ? 'enabled' : 'disabled');
+            }
+
+            const button = event.target;
+            if (showGrid) {
+                button.textContent = "📏 Hide Grid";
+                button.style.backgroundColor = "#ff6600";
+            } else {
+                button.textContent = "📏 Show Grid";
+                button.style.backgroundColor = "#00ff88";
+            }
+        }
+
+        // Create a detailed Puzzlebot model using basic Three.js geometries
+        function createPuzzlebotModel() {
+            console.log('🤖 Creating Puzzlebot model...');
+
+            puzzlebot = new THREE.Group();
+
+            // Main chassis (body)
+            const chassisGeometry = new THREE.BoxGeometry(1.2, 0.3, 0.8);
+            const chassisMaterial = new THREE.MeshPhongMaterial({
+                color: 0x4169E1,
+                shininess: 100
+            });
+            const chassis = new THREE.Mesh(chassisGeometry, chassisMaterial);
+            chassis.position.set(0, 0.15, 0);
+            chassis.castShadow = true;
+            chassis.receiveShadow = true;
+            chassis.name = 'chassis'; // For easy reference
+            puzzlebot.add(chassis);
+
+            // Left wheel
+            const wheelGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16);
+            const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+
+            const leftWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            leftWheel.rotation.z = Math.PI / 2;
+            leftWheel.position.set(-0.3, 0, 0.5);
+            leftWheel.castShadow = true;
+            puzzlebot.add(leftWheel);
+
+            // Right wheel
+            const rightWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            rightWheel.rotation.z = Math.PI / 2;
+            rightWheel.position.set(-0.3, 0, -0.5);
+            rightWheel.castShadow = true;
+            puzzlebot.add(rightWheel);
+
+            // Caster wheel (front)
+            const casterGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const caster = new THREE.Mesh(casterGeometry, wheelMaterial);
+            caster.position.set(0.5, 0, 0);
+            caster.castShadow = true;
+            puzzlebot.add(caster);
+
+            // Sensor/camera on top
+            const sensorGeometry = new THREE.BoxGeometry(0.2, 0.1, 0.2);
+            const sensorMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff88 });
+            const sensor = new THREE.Mesh(sensorGeometry, sensorMaterial);
+            sensor.position.set(0.3, 0.35, 0);
+            sensor.castShadow = true;
+            puzzlebot.add(sensor);
+
+            // Direction indicator (LED/light)
+            const ledGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const ledMaterial = new THREE.MeshPhongMaterial({
+                color: 0xff4444,
+                emissive: 0x442222
+            });
+            const led = new THREE.Mesh(ledGeometry, ledMaterial);
+            led.position.set(0.6, 0.2, 0);
+            puzzlebot.add(led);
+
+            // Add to scene
+            scene.add(puzzlebot);
+
+            console.log('✅ Puzzlebot model created');
+        }
+
+        // Initialize ROS2 connection
+        function initROS2() {
+            console.log('🔌 Connecting to ROS2 bridge...');
+
+            try {
+                rosSocket = new WebSocket('ws://localhost:9090');
+
+                rosSocket.onopen = function () {
+                    console.log('✅ Connected to ROS2 bridge!');
+                    isConnected = true;
+
+                    // Update status
+                    document.getElementById('ros-status').classList.add('connected');
+                    document.getElementById('ros-status').innerHTML =
+                        '<div>🟢 ROS2: Connected</div><div>WebSocket: ws://localhost:9090</div>';
+
+                    // Subscribe to odometry topic
+                    subscribeToOdomTopic();
+                };
+
+                rosSocket.onerror = function (error) {
+                    console.error('❌ ROS2 connection error:', error);
+                    isConnected = false;
+                    document.getElementById('ros-status').innerHTML =
+                        '<div>🔴 ROS2: Error</div><div>Connection failed</div><div>Check rosbridge_server</div><div>WebSocket: ws://localhost:9090</div>';
+                };
+
+                rosSocket.onclose = function (event) {
+                    console.log('🔌 ROS2 connection closed');
+                    isConnected = false;
+                    document.getElementById('ros-status').classList.remove('connected');
+                    document.getElementById('ros-status').innerHTML =
+                        '<div>🔴 ROS2: Disconnected</div><div>WebSocket: ws://localhost:9090</div>';
+                };
+
+                rosSocket.onmessage = function (event) {
+                    handleRosMessage(JSON.parse(event.data));
+                };
+
+            } catch (error) {
+                console.error('❌ Failed to create WebSocket:', error);
+            }
+        }
+
+        // Subscribe to the odometry topic
+        function subscribeToOdomTopic() {
+            const subscribeMsg = {
+                op: 'subscribe',
+                topic: '/odom',
+                type: 'nav_msgs/Odometry'
+            };
+
+            rosSocket.send(JSON.stringify(subscribeMsg));
+            console.log('📡 Subscribed to /odom topic');
+        }
+
+        // Handle incoming ROS messages
+        function handleRosMessage(message) {
+            if (message.topic === '/odom' && message.msg) {
+                const now = Date.now();
+                if (now - lastOdomUpdate < odomUpdateInterval) {
+                    return; // Skip this update
+                }
+                lastOdomUpdate = now;
+
+                const pose = message.msg.pose.pose;
+                const position = pose.position;
+                const orientation = pose.orientation;
+
+                // Convert quaternion to euler angle (yaw)
+                const yaw = Math.atan2(
+                    2 * (orientation.w * orientation.z + orientation.x * orientation.y),
+                    1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)
+                );
+
+                // Update robot pose
+                if (puzzlebot) {
+                    puzzlebot.position.set(position.x, position.z, -position.y);
+                    puzzlebot.rotation.z = yaw; // Adjust for your mesh orientation
+                }
+
+                messageCount++;
+                console.log('📨 Received odom - x:', position.x.toFixed(2), 'y:', position.y.toFixed(2), 'yaw:', (yaw * 180 / Math.PI).toFixed(1), '°');
+
+                // Update UI
+                document.getElementById('current-position').textContent = `x:${position.x.toFixed(2)} y:${position.y.toFixed(2)}`;
+                document.getElementById('robot-rotation').textContent = (yaw * 180 / Math.PI).toFixed(1);
+                document.getElementById('msg-count').textContent = messageCount;
+                document.getElementById('last-msg').textContent = new Date().toLocaleTimeString();
+
+                if (isFollowingRobot && controls && puzzlebot) {
+                    controls.target.copy(puzzlebot.position);
+                    controls.update();
+                }
+            }
+        }
+
+        // Load default GLTF or create fallback
+        function loadDefaultGLTF() {
+            if (gltfLoader) {
+                console.log('📁 Attempting to load puzzlebot.gltf...');
+                loadGLTFModel('vtec_s4.glb');
+            } else {
+                createPuzzlebotModel();
+            }
+        }
+
+        // Load GLTF model
+        function loadGLTFModel(url) {
+            if (!gltfLoader) {
+                console.log('❌ GLTFLoader not available');
+                createPuzzlebotModel();
+                return;
+            }
+
+            console.log('📁 Loading GLTF model:', url);
+
+            gltfLoader.load(
+                url,
+                function (gltf) {
+                    console.log('✅ GLTF model loaded successfully!');
+
+                    // Remove old model if exists
+                    if (puzzlebot) {
+                        scene.remove(puzzlebot);
+                    }
+
+                    puzzlebot = gltf.scene;
+                    puzzlebot.rotation.x = -Math.PI / 2; // Counter 90-degree right rotation
+
+                    // Scale and position the model appropriately
+                    puzzlebot.scale.set(1, 1, 1);
+                    puzzlebot.position.set(0, 0, 0);
+
+                    // Enable shadows for all meshes
+                    puzzlebot.traverse(function (child) {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    scene.add(puzzlebot);
+
+                    // Fit camera to model
+                    fitCameraToModel();
+
+                    console.log('🎯 GLTF model added to scene');
+                },
+                function (progress) {
+                    console.log('Loading progress:', (progress.loaded / progress.total * 100) + '%');
+                },
+                function (error) {
+                    console.log('❌ Error loading GLTF model:', error);
+                    console.log('Creating fallback robot model...');
+                    createPuzzlebotModel();
+                }
+            );
+        }
+
+        // Load GLTF file from file input
+        function loadGLTFFile(input) {
+            const file = input.files[0];
+            if (file) {
+                console.log('📁 Loading file:', file.name);
+                const url = URL.createObjectURL(file);
+                loadGLTFModel(url);
+            }
+        }
+
+        // Change robot color for fun
+        function changeRobotColor() {
+            if (puzzlebot) {
+                currentColorIndex = (currentColorIndex + 1) % colors.length;
+
+                // Try to change color of chassis if it's the built-in model
+                const chassis = puzzlebot.getObjectByName('chassis');
+                if (chassis) {
+                    chassis.material.color.setHex(colors[currentColorIndex]);
+                    console.log('🎨 Changed robot color');
+                } else {
+                    // For GLTF models, change color of first mesh found
+                    puzzlebot.traverse(function (child) {
+                        if (child.isMesh && child.material) {
+                            if (child.material.color) {
+                                child.material.color.setHex(colors[currentColorIndex]);
+                                console.log('🎨 Changed GLTF model color');
+                                return;
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        // Fit camera to model and update home position
+        function fitCameraToModel() {
+            if (!puzzlebot) return;
+
+            const box = new THREE.Box3().setFromObject(puzzlebot);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+            cameraZ *= 2.5; // Add padding
+
+            // Update camera position
+            camera.position.set(cameraZ, cameraZ * 0.5, cameraZ);
+
+            // Update controls target to model center
+            if (controls) {
+                controls.target.copy(center);
+                controls.update();
+            } else {
+                camera.lookAt(center);
+            }
+
+            // Update home position to this new fitted position
+            originalCameraPosition = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+            originalCameraTarget = { x: center.x, y: center.y, z: center.z };
+
+            console.log('📷 Camera fitted to model and home position updated');
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update controls
+            if (controls) {
+                controls.update();
+            }
+
+            // Rotate Puzzlebot based on current speed
+            if (puzzlebot) {
+                puzzlebot.rotation.y += rotationSpeed * 0.016; // 60 FPS approximation
+
+                // Update rotation display
+                const rotationDegrees = (puzzlebot.rotation.y * 180 / Math.PI) % 360;
+                document.getElementById('robot-rotation').textContent = rotationDegrees.toFixed(1);
+            }
+
+            // Update anchor indicator position to match controls target
+            if (controls && window.anchorIndicator) {
+                window.anchorIndicator.position.set(
+                    controls.target.x,
+                    -0.049, // Floor level
+                    controls.target.z
+                );
+            }
+
+            // Render scene
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Update controls if available
+            if (controls) {
+                controls.update();
+            }
+        }
+
+        // Setup controls
+        function setupControls() {
+            if (controls) {
+                controls.addEventListener('start', function () {
+                    if (window.anchorIndicator) window.anchorIndicator.visible = true;
+                });
+
+                controls.addEventListener('end', function () {
+                    if (window.anchorIndicator) window.anchorIndicator.visible = false;
+                });
+            }
+        }
+
+        // Initialize everything
+        function init() {
+            console.log('🚀 Starting Three.js ROS2 Puzzlebot Demo...');
+
+            initThreeJS();
+            initROS2();
+            setupControls();
+
+            // Start animation loop
+            animate();
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+
+            console.log('✅ Initialization complete!');
+            console.log('🎮 Use the controls to test robot rotation!');
+        }
+
+        // Global control variables
+        let isFollowingRobot = false;
+        let isTopView = false;
+
+        // Toggle follow robot mode
+        function toggleFollowRobot() {
+            isFollowingRobot = !isFollowingRobot;
+            const button = event.target;
+
+            if (isFollowingRobot) {
+                button.textContent = "📍 Following";
+                button.style.backgroundColor = "#ff6600";
+                console.log("📍 Following robot enabled");
+            } else {
+                button.textContent = "📍 Follow Robot";
+                button.style.backgroundColor = "#00ff88";
+                console.log("📍 Following robot disabled");
+            }
+        }
+
+        // Toggle top view
+        function toggleTopView() {
+            isTopView = !isTopView;
+            const button = event.target;
+
+            if (isTopView) {
+                // Set top-down view
+                if (puzzlebot && controls) {
+                    controls.target.copy(puzzlebot.position);
+                    camera.position.set(puzzlebot.position.x, puzzlebot.position.y + 10, puzzlebot.position.z);
+                    controls.update();
+                }
+                button.textContent = "🔄 Perspective";
+                button.style.backgroundColor = "#ff6600";
+            } else {
+                goHome();
+                button.textContent = "🔄 Top View";
+                button.style.backgroundColor = "#00ff88";
+            }
+        }
+
+        // Reset view to default
+        function resetView() {
+            isFollowingRobot = false;
+            isTopView = false;
+
+            // Reset button colors
+            const buttons = document.querySelectorAll('#controls button');
+            buttons.forEach(btn => {
+                if (btn.textContent.includes('Follow')) btn.textContent = "📍 Follow Robot";
+                if (btn.textContent.includes('Top') || btn.textContent.includes('Perspective')) btn.textContent = "🔄 Top View";
+                if (btn.textContent.includes('Grid')) {
+                    btn.textContent = "📏 Toggle Grid";
+                    btn.style.backgroundColor = "#00ff88";
+                }
+                if (!btn.textContent.includes('Grid') && !btn.textContent.includes('Reset Floor')) {
+                    btn.style.backgroundColor = "#00ff88";
+                }
+            });
+
+            goHome();
+            console.log("🎯 View reset to default");
+        }
+
+        // Go back to original starting camera position
+        function goHome() {
+            if (controls) {
+                // Use the original fixed starting position
+                const homePos = new THREE.Vector3(3, 2, 3);
+                const homeTarget = new THREE.Vector3(0, 0, 0);
+
+                // Animate to original position
+                const startPosition = camera.position.clone();
+                const startTarget = controls.target.clone();
+
+                let progress = 0;
+                const animationSpeed = 0.05;
+
+                function animateHome() {
+                    progress += animationSpeed;
+
+                    if (progress <= 1) {
+                        camera.position.lerpVectors(startPosition, homePos, progress);
+                        controls.target.lerpVectors(startTarget, homeTarget, progress);
+                        controls.update();
+                        requestAnimationFrame(animateHome);
+                    } else {
+                        camera.position.copy(homePos);
+                        controls.target.copy(homeTarget);
+                        controls.update();
+                        console.log('🏠 Camera returned to original starting position');
+                    }
+                }
+
+                animateHome();
+            }
+        }
+
+        // Start when page loads - but wait for modules to load
+        // window.addEventListener('load', init); // This is now called from the module script above
+    </script>
+</body>
+
+</html>
