@@ -9,6 +9,8 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rclpy REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(urdf REQUIRED)
 find_package(robot_state_publisher REQUIRED)
 find_package(xacro REQUIRED)
@@ -29,6 +31,7 @@ find_package(cv_bridge REQUIRED)
 # find_package(cvplot REQUIRED)
 
 set(DEPENDENCIES
+  rclpy  
   ament_cmake
   urdf
   robot_state_publisher
@@ -81,12 +84,12 @@ add_executable(mcl_node_test
 
 ament_target_dependencies(mcl_node_test ${DEPENDENCIES})
 
-# target_link_libraries(mcl_node cvplot)
-
-
 # Install Python executables
 install(PROGRAMS
-DESTINATION lib/${PROJECT_NAME}
+  scripts/display_lcd_node.py
+  scripts/convert2base64.py
+  scripts/send_base64.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS
@@ -98,6 +101,7 @@ install(TARGETS
 install(DIRECTORY 
   launch
   config
+  scripts
   DESTINATION share/${PROJECT_NAME}
 )
 if(BUILD_TESTING)

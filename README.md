@@ -110,6 +110,30 @@ ros2 run pzb_control pzb_teleop_low_level_node.py
 
 ```
 
+### Add to dockerfile 
+```Text
+docker file from this image: osrf/ros:humble-desktop-full. Adds the follwing to the root/.bashrc:
+
+source /opt/ros/humble/setup.bash
+source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
+export GZ_SIM_RESOURCE_PATH=:/home/Workspace/src/pzb_description/models:$GZ_SIM_RESOURCE_PATH
+export GZ_IP=127.0.0.2
+export GZ_VERSION=harmonic
+
+
+And also installs neovim, fzf, btop into it. And the following 
+
+sudo apt install ros-humble-xacro 
+
+sudo apt install ros-humble-ros-gz
+
+sudo apt install ros-$ROS_DISTRO-navigation2
+
+pip install pillow numpy pyserial
+```
+
+
+
 ## Team members:
 ### *Andrés Carrizales - A00832679*
 ### *Daniel Castañon - A01284991*
