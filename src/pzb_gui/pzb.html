@@ -59,7 +59,6 @@
             padding: 15px;
             border-radius: 10px;
             border: 1px solid #00ff88;
-            max-width: 350px;
         }
 
         button {
@@ -71,7 +70,6 @@
             border-radius: 5px;
             cursor: pointer;
             font-weight: bold;
-            font-size: 11px;
         }
 
         button:hover {
@@ -82,37 +80,14 @@
             width: 200px;
             margin: 5px 0;
         }
-
-        input[type="file"] {
-            background: #333;
-            color: white;
-            border: 1px solid #666;
-            padding: 4px;
-            border-radius: 3px;
-            margin: 2px 0;
-            font-size: 10px;
-            width: 100%;
-        }
-
-        .file-section {
-            margin: 8px 0;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 5px;
-        }
-
-        .file-section h4 {
-            margin: 0 0 5px 0;
-            color: #00ff88;
-            font-size: 12px;
-        }
     </style>
 </head>
 
 <body>
     <div id="info">
         <h3>🤖 ROS2 Puzzlebot</h3>
-        <div class="status-line">Position: <span id="current-position">x:0.0 y:0.0</span></div>
+        <div class="status-line">Position: <span id="current-speed">x:0.0 y:0.0</span></div>
+        <div class="status-line">Current Speed: <span id="current-speed">0.0</span> rad/s</div>
         <div class="status-line">Robot Rotation: <span id="robot-rotation">0.0</span>°</div>
         <div class="status-line">Messages Received: <span id="msg-count">0</span></div>
         <div class="status-line">Last Message: <span id="last-msg">None</span></div>
@@ -130,35 +105,34 @@
         <button onclick="toggleTopView()">🔄 Top View</button>
         <button onclick="resetView()">🎯 Reset View</button>
         <br><br>
-
-        <div class="file-section">
-            <h4>🏢 Floor Texture</h4>
-            <button onclick="resetFloor()">🔄 Reset Floor</button>
-            <button onclick="toggleFloorGrid()">📏 Toggle Grid</button>
-            <button onclick="loadPresetMap()">🗺️ Load Preset</button>
-            <br>
-            <button onclick="scaleTexture(0.1)">🔍 Scale +</button>
-            <button onclick="scaleTexture(-0.1)">🔍 Scale -</button>
-            <button onclick="rotateTexture(Math.PI/12)">↻ Rotate +</button>
-            <button onclick="rotateTexture(-Math.PI/12)">↺ Rotate -</button>
-            <br>
-            <input type="file" id="floor-image" accept="image/*" onchange="loadFloorTexture(this)">
-        </div>
-
-        <div class="file-section">
-            <h4>🏢 Floor Texture</h4>
-            <button onclick="resetFloor()">🔄 Reset Floor</button>
-            <button onclick="toggleFloorGrid()">📏 Toggle Grid</button>
-            <button onclick="loadPresetMap()">🗺️ Load Preset</button>
-            <br>
-            <input type="file" id="floor-image" accept="image/*" onchange="loadFloorTexture(this)">
-        </div>
-
+        <button onclick="loadDefaultGLTF()">📁 Load GLTF</button>
+        <button onclick="changeRobotColor()">🎨 Change Color</button>
         <br>
         <div style="font-size: 10px; margin-top: 5px;">
             🖱️ Mouse: Drag to orbit • Scroll to zoom • Right-click drag to pan
         </div>
     </div>
+
+    <!-- <div id="controls">
+        <h3>🎮 Test Controls</h3>
+        <div>Test Speed: <span id="speed-val">1.0</span> rad/s</div>
+        <input type="range" id="speed-slider" min="-5" max="5" step="0.1" value="1.0">
+        <br>
+        <button onclick="publishSpeed(0)">Stop</button>
+        <button onclick="publishSpeed(1)">Slow</button>
+        <button onclick="publishSpeed(3)">Fast</button>
+        <button onclick="publishSpeed(-2)">Reverse</button>
+        <br><br>
+        <button onclick="changeRobotColor()">Change Color</button>
+        <button onclick="loadDefaultGLTF()">Load GLTF</button>
+        <button onclick="goHome()">🏠 Home View</button>
+        <br>
+        <div>📁 Load your GLTF: <input type="file" id="gltf-file" accept=".gltf,.glb" onchange="loadGLTFFile(this)">
+        </div>
+        <div style="font-size: 10px; margin-top: 5px;">
+            🖱️ Mouse: Drag to orbit • Scroll to zoom • Right-click drag to pan
+        </div>
+    </div> -->
 
     <!-- Three.js and GLTFLoader from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -183,16 +157,12 @@
     </script>
 
     <script>
-        // Three.js global variables
-        let textureScale = 6;
-        let textureRotation = 0;
+        // Three.js variables
         let scene, camera, renderer, puzzlebot, controls;
         let rotationSpeed = 0.0;
         let messageCount = 0;
         let gltfLoader;
-        let floorPlane, gridHelper;
-        let floorTexture = null;
-        let showGrid = true;
+
 
         let lastOdomUpdate = 0;
         const odomUpdateInterval = 50; // Update every 50ms (20 FPS)
@@ -282,16 +252,18 @@
             directionalLight.shadow.camera.bottom = -10;
             scene.add(directionalLight);
 
-            // Create floor plane
-            createFloorPlane();
-
-            loadPresetMap();
-
+            // Add ground plane
+            const planeGeometry = new THREE.PlaneGeometry(10, 10);
+            const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -0.049;
+            plane.receiveShadow = true;
+            scene.add(plane);
 
             // Add grid helper
-            gridHelper = new THREE.GridHelper(10, 20, 0x555555, 0x333333);
-            gridHelper.position.y = -0.048;
-            gridHelper.visible = false;  // Add this line
+            const gridHelper = new THREE.GridHelper(10, 20, 0x555555, 0x333333);
+            gridHelper.position.y = -0.049;
             scene.add(gridHelper);
 
             // Add rotation anchor indicator
@@ -307,153 +279,6 @@
             window.anchorIndicator.visible = false; // Start hidden
 
             console.log('✅ Three.js scene initialized');
-        }
-
-        // Create floor plane
-        function createFloorPlane() {
-            // Remove existing floor if it exists
-            if (floorPlane) {
-                scene.remove(floorPlane);
-            }
-
-            const planeGeometry = new THREE.PlaneGeometry(10, 10);
-            const planeMaterial = new THREE.MeshPhongMaterial({
-                color: 0x666666,
-                transparent: true
-            });
-
-            floorPlane = new THREE.Mesh(planeGeometry, planeMaterial);
-            floorPlane.rotation.x = -Math.PI / 2;
-            floorPlane.position.y = -0.049;
-            floorPlane.receiveShadow = true;
-            scene.add(floorPlane);
-
-            console.log('🏢 Floor plane created');
-        }
-
-        function loadPresetMap() {
-            const loader = new THREE.TextureLoader();
-            loader.load('image/presa_floor.png',
-                function (texture) {
-                    texture.wrapS = THREE.RepeatWrapping;
-                    texture.wrapT = THREE.RepeatWrapping;
-                    texture.repeat.set(1.0, 1.0);
-                    texture.rotation = 0;
-                    texture.center.set(0.5, 0.5); // Rotate around center
-                    texture.flipY = false;
-
-                    floorTexture = texture;
-                    if (floorPlane) {
-                        floorPlane.material.map = texture;
-                        floorPlane.material.color.setHex(0xffffff);
-                        floorPlane.material.needsUpdate = true;
-                    }
-                    console.log('✅ Preset map loaded');
-                },
-                undefined,
-                function (error) {
-                    console.log('❌ Could not load preset map, using default floor');
-                }
-            );
-
-            scaleTexture(0);
-        }
-
-        function rotateTexture(delta) {
-            textureRotation += delta;
-            updateTextureTransform();
-            console.log('🔄 Texture rotation:', (textureRotation * 180 / Math.PI).toFixed(1), '°');
-        }
-
-        function scaleTexture(delta) {
-            textureScale = Math.max(0.1, textureScale + delta);
-            if (floorPlane) {
-                floorPlane.scale.set(textureScale, textureScale, textureScale);
-            }
-            console.log('🔍 Floor scale:', textureScale.toFixed(2));
-        }
-
-        function updateTextureTransform() {
-            if (floorTexture) {
-                // Don't change repeat - keep it at 1,1
-                floorTexture.rotation = textureRotation;
-                floorTexture.needsUpdate = true;
-            }
-        }
-
-        // Load floor texture from file
-        function loadFloorTexture(input) {
-            const file = input.files[0];
-            if (!file) return;
-
-            console.log('🖼️ Loading floor texture:', file.name);
-
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const loader = new THREE.TextureLoader();
-                loader.load(e.target.result,
-                    function (texture) {
-                        // Configure texture
-                        texture.wrapS = THREE.RepeatWrapping;
-                        texture.wrapT = THREE.RepeatWrapping;
-                        texture.repeat.set(1, 1); // Adjust repeat as needed
-                        texture.flipY = false;
-
-                        // Store reference
-                        floorTexture = texture;
-
-                        // Apply to floor
-                        if (floorPlane) {
-                            floorPlane.material.map = texture;
-                            floorPlane.material.color.setHex(0xffffff); // Reset color to white for proper texture display
-                            floorPlane.material.needsUpdate = true;
-                        }
-
-                        console.log('✅ Floor texture loaded and applied');
-                    },
-                    function (progress) {
-                        console.log('Loading texture progress:', progress);
-                    },
-                    function (error) {
-                        console.error('❌ Error loading floor texture:', error);
-                        alert('Error loading image. Please try a different image file.');
-                    }
-                );
-            };
-
-            reader.readAsDataURL(file);
-        }
-
-        // Reset floor to default
-        function resetFloor() {
-            if (floorPlane) {
-                floorPlane.material.map = null;
-                floorPlane.material.color.setHex(0x666666);
-                floorPlane.material.needsUpdate = true;
-                floorTexture = null;
-                console.log('🔄 Floor reset to default');
-            }
-
-            // Clear file input
-            document.getElementById('floor-image').value = '';
-        }
-
-        // Toggle grid visibility
-        function toggleFloorGrid() {
-            showGrid = !showGrid;
-            if (gridHelper) {
-                gridHelper.visible = showGrid;
-                console.log('📏 Grid', showGrid ? 'enabled' : 'disabled');
-            }
-
-            const button = event.target;
-            if (showGrid) {
-                button.textContent = "📏 Hide Grid";
-                button.style.backgroundColor = "#ff6600";
-            } else {
-                button.textContent = "📏 Show Grid";
-                button.style.backgroundColor = "#00ff88";
-            }
         }
 
         // Create a detailed Puzzlebot model using basic Three.js geometries
@@ -608,7 +433,7 @@
                 console.log('📨 Received odom - x:', position.x.toFixed(2), 'y:', position.y.toFixed(2), 'yaw:', (yaw * 180 / Math.PI).toFixed(1), '°');
 
                 // Update UI
-                document.getElementById('current-position').textContent = `x:${position.x.toFixed(2)} y:${position.y.toFixed(2)}`;
+                document.getElementById('current-speed').textContent = `x:${position.x.toFixed(2)} y:${position.y.toFixed(2)}`;
                 document.getElementById('robot-rotation').textContent = (yaw * 180 / Math.PI).toFixed(1);
                 document.getElementById('msg-count').textContent = messageCount;
                 document.getElementById('last-msg').textContent = new Date().toLocaleTimeString();
@@ -620,11 +445,30 @@
             }
         }
 
+        // Publish speed for testing
+        function publishSpeed(speed) {
+            if (!isConnected || !rosSocket) {
+                console.log('⚠️ Not connected to ROS2');
+                return;
+            }
+
+            const publishMsg = {
+                op: 'publish',
+                topic: '/speed',
+                msg: {
+                    data: speed
+                }
+            };
+
+            rosSocket.send(JSON.stringify(publishMsg));
+            console.log('📤 Published speed:', speed);
+        }
+
         // Load default GLTF or create fallback
         function loadDefaultGLTF() {
             if (gltfLoader) {
                 console.log('📁 Attempting to load puzzlebot.gltf...');
-                loadGLTFModel('vtec_s4.glb');
+                loadGLTFModel('puzzlebot.gltf');
             } else {
                 createPuzzlebotModel();
             }
@@ -795,15 +639,16 @@
 
         // Setup controls
         function setupControls() {
-            if (controls) {
-                controls.addEventListener('start', function () {
-                    if (window.anchorIndicator) window.anchorIndicator.visible = true;
-                });
+            const speedSlider = document.getElementById('speed-slider');
+            const speedVal = document.getElementById('speed-val');
 
-                controls.addEventListener('end', function () {
-                    if (window.anchorIndicator) window.anchorIndicator.visible = false;
-                });
-            }
+            controls.addEventListener('start', function () {
+                if (window.anchorIndicator) window.anchorIndicator.visible = true;
+            });
+
+            controls.addEventListener('end', function () {
+                if (window.anchorIndicator) window.anchorIndicator.visible = false;
+            });
         }
 
         // Initialize everything
@@ -875,13 +720,7 @@
             buttons.forEach(btn => {
                 if (btn.textContent.includes('Follow')) btn.textContent = "📍 Follow Robot";
                 if (btn.textContent.includes('Top') || btn.textContent.includes('Perspective')) btn.textContent = "🔄 Top View";
-                if (btn.textContent.includes('Grid')) {
-                    btn.textContent = "📏 Toggle Grid";
-                    btn.style.backgroundColor = "#00ff88";
-                }
-                if (!btn.textContent.includes('Grid') && !btn.textContent.includes('Reset Floor')) {
-                    btn.style.backgroundColor = "#00ff88";
-                }
+                btn.style.backgroundColor = "#00ff88";
             });
 
             goHome();
