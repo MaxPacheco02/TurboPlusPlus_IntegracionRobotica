@@ -375,7 +375,7 @@
             </friction>
           </surface>
         </collision>
-        <!-- <visual name="visual">
+        <visual name="visual">
           <geometry>
             <plane>
               <normal>0 0 1</normal>
@@ -387,7 +387,7 @@
             <diffuse>0.1 0.1 0.1 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
-        </visual> -->
+        </visual>
       </link>
     </model>
 

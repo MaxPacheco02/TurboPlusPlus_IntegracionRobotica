@@ -38,6 +38,45 @@
             font-size: 12px;
         }
 
+        #camera-feed {
+            position: absolute;
+            top: 10px;
+            right: 250px;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid #00ff88;
+            z-index: 100;
+            min-width: 200px;
+        }
+
+        #camera-image {
+            width: 200px;
+            height: 150px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-size: 12px;
+            overflow: hidden;
+        }
+
+        #camera-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
+        .camera-status {
+            font-size: 10px;
+            margin-top: 5px;
+            text-align: center;
+        }
+
         .connected {
             border-color: #00ff88 !important;
         }
@@ -80,17 +119,45 @@
             width: 200px;
             margin: 5px 0;
         }
+
+        .camera-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+        }
+
+        .camera-controls button {
+            padding: 4px 8px;
+            font-size: 10px;
+            margin: 1px;
+        }
     </style>
 </head>
 
 <body>
     <div id="info">
         <h3>🤖 ROS2 Puzzlebot</h3>
-        <div class="status-line">Position: <span id="current-speed">x:0.0 y:0.0</span></div>
+        <div class="status-line">Position: <span id="current-position">x:0.0 y:0.0</span></div>
         <div class="status-line">Current Speed: <span id="current-speed">0.0</span> rad/s</div>
         <div class="status-line">Robot Rotation: <span id="robot-rotation">0.0</span>°</div>
         <div class="status-line">Messages Received: <span id="msg-count">0</span></div>
         <div class="status-line">Last Message: <span id="last-msg">None</span></div>
+    </div>
+
+    <div id="camera-feed">
+        <h3>📷 Camera Feed</h3>
+        <div id="camera-image">
+            No image received
+        </div>
+        <div class="camera-status">
+            <div>Topic: /zed_rgbd/image</div>
+            <div>Status: <span id="camera-status">Waiting...</span></div>
+            <div>FPS: <span id="camera-fps">0</span></div>
+        </div>
+        <div class="camera-controls">
+            <button onclick="toggleCameraSize()">📏 Resize</button>
+            <button onclick="saveCameraImage()">💾 Save</button>
+        </div>
     </div>
 
     <div id="ros-status">
@@ -112,27 +179,6 @@
             🖱️ Mouse: Drag to orbit • Scroll to zoom • Right-click drag to pan
         </div>
     </div>
-
-    <!-- <div id="controls">
-        <h3>🎮 Test Controls</h3>
-        <div>Test Speed: <span id="speed-val">1.0</span> rad/s</div>
-        <input type="range" id="speed-slider" min="-5" max="5" step="0.1" value="1.0">
-        <br>
-        <button onclick="publishSpeed(0)">Stop</button>
-        <button onclick="publishSpeed(1)">Slow</button>
-        <button onclick="publishSpeed(3)">Fast</button>
-        <button onclick="publishSpeed(-2)">Reverse</button>
-        <br><br>
-        <button onclick="changeRobotColor()">Change Color</button>
-        <button onclick="loadDefaultGLTF()">Load GLTF</button>
-        <button onclick="goHome()">🏠 Home View</button>
-        <br>
-        <div>📁 Load your GLTF: <input type="file" id="gltf-file" accept=".gltf,.glb" onchange="loadGLTFFile(this)">
-        </div>
-        <div style="font-size: 10px; margin-top: 5px;">
-            🖱️ Mouse: Drag to orbit • Scroll to zoom • Right-click drag to pan
-        </div>
-    </div> -->
 
     <!-- Three.js and GLTFLoader from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -163,9 +209,8 @@
         let messageCount = 0;
         let gltfLoader;
 
-
         let lastOdomUpdate = 0;
-        const odomUpdateInterval = 50; // Update every 50ms (20 FPS)
+        const odomUpdateInterval = 20; // Update every ___ ms
 
         // Store original camera position for home button
         let originalCameraPosition = { x: 3, y: 2, z: 3 };
@@ -174,6 +219,12 @@
         // ROS2 variables
         let rosSocket = null;
         let isConnected = false;
+
+        // Camera feed variables
+        let cameraFrameCount = 0;
+        let lastCameraUpdate = 0;
+        let cameraFPS = 0;
+        let cameraSize = 'small'; // 'small', 'medium', 'large'
 
         // Color array for fun
         const colors = [0x4169E1, 0x9932cc, 0x00ff88, 0xff4444, 0xffa500, 0x8fbc8f];
@@ -364,8 +415,9 @@
                     document.getElementById('ros-status').innerHTML =
                         '<div>🟢 ROS2: Connected</div><div>WebSocket: ws://localhost:9090</div>';
 
-                    // Subscribe to odometry topic
+                    // Subscribe to topics
                     subscribeToOdomTopic();
+                    subscribeToCameraTopic();
                 };
 
                 rosSocket.onerror = function (error) {
@@ -404,6 +456,19 @@
             console.log('📡 Subscribed to /odom topic');
         }
 
+        // Subscribe to the camera frame topic
+        function subscribeToCameraTopic() {
+            const subscribeMsg = {
+                op: 'subscribe',
+                topic: '/zed_rgbd/image',
+                type: 'sensor_msgs/Image'
+            };
+
+            rosSocket.send(JSON.stringify(subscribeMsg));
+            console.log('📡 Subscribed to /zed_rgbd/image topic');
+            document.getElementById('camera-status').textContent = 'Subscribed';
+        }
+
         // Handle incoming ROS messages
         function handleRosMessage(message) {
             if (message.topic === '/odom' && message.msg) {
@@ -430,10 +495,9 @@
                 }
 
                 messageCount++;
-                console.log('📨 Received odom - x:', position.x.toFixed(2), 'y:', position.y.toFixed(2), 'yaw:', (yaw * 180 / Math.PI).toFixed(1), '°');
 
                 // Update UI
-                document.getElementById('current-speed').textContent = `x:${position.x.toFixed(2)} y:${position.y.toFixed(2)}`;
+                document.getElementById('current-position').textContent = `x:${position.x.toFixed(2)} y:${position.y.toFixed(2)}`;
                 document.getElementById('robot-rotation').textContent = (yaw * 180 / Math.PI).toFixed(1);
                 document.getElementById('msg-count').textContent = messageCount;
                 document.getElementById('last-msg').textContent = new Date().toLocaleTimeString();
@@ -442,6 +506,194 @@
                     controls.target.copy(puzzlebot.position);
                     controls.update();
                 }
+            }
+
+            // Handle camera frame messages
+            if (message.topic === '/zed_rgbd/image' && message.msg) {
+                handleCameraFrame(message.msg);
+            }
+        }
+
+        // Handle camera frame data
+        function handleCameraFrame(imageMsg) {
+            try {
+                console.log('📷 handleCameraFrame called');
+                console.log('📷 imageMsg structure:', {
+                    hasData: !!imageMsg.data,
+                    dataType: typeof imageMsg.data,
+                    dataLength: imageMsg.data ? imageMsg.data.length : 'no data',
+                    encoding: imageMsg.encoding,
+                    width: imageMsg.width,
+                    height: imageMsg.height,
+                    step: imageMsg.step,
+                    isBigendian: imageMsg.is_bigendian
+                });
+
+                cameraFrameCount++;
+                const now = Date.now();
+
+                // Calculate FPS
+                if (now - lastCameraUpdate > 2000) {
+                    cameraFPS = cameraFrameCount;
+                    cameraFrameCount = 0;
+                    lastCameraUpdate = now;
+                    document.getElementById('camera-fps').textContent = cameraFPS;
+                }
+
+                // Check if we have valid image data
+                if (!imageMsg.data) {
+                    console.error('❌ No image data in message');
+                    document.getElementById('camera-status').textContent = 'No data';
+                    return;
+                }
+
+                // Convert string data to byte array if needed
+                let imageData;
+                const encoding = imageMsg.encoding;
+                console.log('📷 Processing encoding:', encoding);
+
+                // Convert string data to Uint8Array for processing
+                let dataArray;
+                if (typeof imageMsg.data === 'string') {
+                    // Convert base64 string to byte array
+                    const binaryString = atob(imageMsg.data);
+                    dataArray = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        dataArray[i] = binaryString.charCodeAt(i);
+                    }
+                    console.log('📷 Converted string to byte array, length:', dataArray.length);
+                } else if (Array.isArray(imageMsg.data)) {
+                    // Convert array to Uint8Array
+                    dataArray = new Uint8Array(imageMsg.data);
+                    console.log('📷 Converted array to Uint8Array, length:', dataArray.length);
+                } else {
+                    dataArray = imageMsg.data;
+                }
+
+                if (encoding === 'rgb8' || encoding === 'bgr8') {
+                    console.log('📷 Converting raw RGB/BGR data...');
+                    // Create a new imageMsg object with the byte array
+                    const processedImageMsg = {
+                        ...imageMsg,
+                        data: dataArray
+                    };
+                    imageData = convertRawImageToBase64(processedImageMsg);
+                } else if (encoding === 'compressed' || encoding.includes('jpeg') || encoding.includes('png')) {
+                    console.log('📷 Using compressed image data...');
+                    if (typeof imageMsg.data === 'string') {
+                        imageData = 'data:image/jpeg;base64,' + imageMsg.data;
+                    } else {
+                        const base64String = btoa(String.fromCharCode.apply(null, dataArray));
+                        imageData = 'data:image/jpeg;base64,' + base64String;
+                    }
+                } else if (encoding === 'mono8') {
+                    console.log('📷 Converting mono8 data...');
+                    const processedImageMsg = {
+                        ...imageMsg,
+                        data: dataArray
+                    };
+                    imageData = convertMonoImageToBase64(processedImageMsg);
+                } else {
+                    console.log('⚠️ Unsupported image encoding:', encoding);
+                    document.getElementById('camera-status').textContent = 'Unsupported: ' + encoding;
+                    return;
+                }
+
+                console.log('📷 Image data generated, length:', imageData ? imageData.length : 'null');
+
+                // Update the image element
+                const cameraDiv = document.getElementById('camera-image');
+                if (cameraDiv) {
+                    cameraDiv.innerHTML = `<img src="${imageData}" alt="Camera feed" onload="console.log('📷 Image loaded successfully')" onerror="console.error('❌ Image failed to load')">`;
+                    console.log('📷 Image element updated');
+                }
+
+                document.getElementById('camera-status').textContent = 'Receiving';
+                console.log('✅ Camera frame processed successfully:', encoding, imageMsg.width + 'x' + imageMsg.height);
+
+            } catch (error) {
+                console.error('❌ Error processing camera frame:', error);
+                console.error('❌ Error stack:', error.stack);
+                document.getElementById('camera-status').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        // Convert raw image data to base64
+        function convertRawImageToBase64(imageMsg) {
+            const width = imageMsg.width;
+            const height = imageMsg.height;
+            const data = imageMsg.data;
+            const encoding = imageMsg.encoding;
+
+            // Create a canvas to convert raw data to image
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            const imageData = ctx.createImageData(width, height);
+            const pixels = imageData.data;
+
+            if (encoding === 'rgb8') {
+                // RGB format
+                for (let i = 0; i < data.length; i += 3) {
+                    const pixelIndex = (i / 3) * 4;
+                    pixels[pixelIndex] = data[i];     // R
+                    pixels[pixelIndex + 1] = data[i + 1]; // G
+                    pixels[pixelIndex + 2] = data[i + 2]; // B
+                    pixels[pixelIndex + 3] = 255;    // A
+                }
+            } else if (encoding === 'bgr8') {
+                // BGR format
+                for (let i = 0; i < data.length; i += 3) {
+                    const pixelIndex = (i / 3) * 4;
+                    pixels[pixelIndex] = data[i + 2];     // R (from B)
+                    pixels[pixelIndex + 1] = data[i + 1]; // G
+                    pixels[pixelIndex + 2] = data[i];     // B (from R)
+                    pixels[pixelIndex + 3] = 255;        // A
+                }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            return canvas.toDataURL('image/png');
+        }
+
+        // Toggle camera feed size
+        function toggleCameraSize() {
+            const cameraImage = document.getElementById('camera-image');
+            const cameraFeed = document.getElementById('camera-feed');
+
+            if (cameraSize === 'small') {
+                cameraSize = 'medium';
+                cameraImage.style.width = '300px';
+                cameraImage.style.height = '225px';
+                cameraFeed.style.minWidth = '320px';
+            } else if (cameraSize === 'medium') {
+                cameraSize = 'large';
+                cameraImage.style.width = '400px';
+                cameraImage.style.height = '300px';
+                cameraFeed.style.minWidth = '420px';
+            } else {
+                cameraSize = 'small';
+                cameraImage.style.width = '200px';
+                cameraImage.style.height = '150px';
+                cameraFeed.style.minWidth = '220px';
+            }
+
+            console.log('📏 Camera size changed to:', cameraSize);
+        }
+
+        // Save camera image
+        function saveCameraImage() {
+            const img = document.querySelector('#camera-image img');
+            if (img && img.src) {
+                const link = document.createElement('a');
+                link.download = `puzzlebot_camera_${new Date().getTime()}.png`;
+                link.href = img.src;
+                link.click();
+                console.log('💾 Camera image saved');
+            } else {
+                console.log('⚠️ No camera image to save');
             }
         }
 
@@ -525,16 +777,6 @@
                     createPuzzlebotModel();
                 }
             );
-        }
-
-        // Load GLTF file from file input
-        function loadGLTFFile(input) {
-            const file = input.files[0];
-            if (file) {
-                console.log('📁 Loading file:', file.name);
-                const url = URL.createObjectURL(file);
-                loadGLTFModel(url);
-            }
         }
 
         // Change robot color for fun
@@ -639,16 +881,15 @@
 
         // Setup controls
         function setupControls() {
-            const speedSlider = document.getElementById('speed-slider');
-            const speedVal = document.getElementById('speed-val');
+            if (controls) {
+                controls.addEventListener('start', function () {
+                    if (window.anchorIndicator) window.anchorIndicator.visible = true;
+                });
 
-            controls.addEventListener('start', function () {
-                if (window.anchorIndicator) window.anchorIndicator.visible = true;
-            });
-
-            controls.addEventListener('end', function () {
-                if (window.anchorIndicator) window.anchorIndicator.visible = false;
-            });
+                controls.addEventListener('end', function () {
+                    if (window.anchorIndicator) window.anchorIndicator.visible = false;
+                });
+            }
         }
 
         // Initialize everything
@@ -667,6 +908,7 @@
 
             console.log('✅ Initialization complete!');
             console.log('🎮 Use the controls to test robot rotation!');
+            console.log('📷 Camera feed will appear when /zed_rgbd/image topic publishes data');
         }
 
         // Global control variables
@@ -761,8 +1003,6 @@
             }
         }
 
-        // Start when page loads - but wait for modules to load
-        // window.addEventListener('load', init); // This is now called from the module script above
     </script>
 </body>
 
