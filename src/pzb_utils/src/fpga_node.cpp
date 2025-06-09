@@ -1,15 +1,12 @@
-// UBICACIÓN: ~/pzb_ws/src/pzb_utils/src/fpga_node.cpp
-// VERSIÓN SIN LIBRERÍA SERIAL - USA UART NATIVO DE LINUX
-
 #include <rclcpp/rclcpp.hpp>
 #include <pzb_msgs/msg/lift_state.hpp>
-#include "pzb_msgs/srv/set_lift.hpp"
+#include <pzb_msgs/srv/set_lift.hpp>
+
 #include <thread>
 #include <mutex>
 #include <chrono>
 #include <map>
-
-// Headers para UART nativo de Linux
+#include <atomic>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -20,8 +17,11 @@
 class FPGANode : public rclcpp::Node
 {
 public:
-    FPGANode() : Node("fpga_node"), current_state_(pzb_msgs::msg::LiftState::IDLE), serial_fd_(-1)
+    FPGANode() : Node("fpga_node"), serial_fd_(-1), current_state_(pzb_msgs::msg::LiftState::IDLE), 
+                 should_stop_(false)
     {
+        RCLCPP_INFO(this->get_logger(), "FPGA NODE Initialized!");
+        
         // Declarar parámetros
         this->declare_parameter<std::string>("serial_port", "/dev/ttyTHS1");
         this->declare_parameter<int>("baudrate", 9600);
@@ -39,8 +39,7 @@ public:
             RCLCPP_INFO(this->get_logger(), "Puerto serie abierto: %s @ %d baud", 
                        serial_port.c_str(), baudrate);
         } else {
-            RCLCPP_ERROR(this->get_logger(), "Error al abrir puerto serie: %s", serial_port.c_str());
-            return;
+            RCLCPP_WARN(this->get_logger(), "Puerto serie no disponible: %s", serial_port.c_str());
         }
         
         // Publisher para el estado actual del lift
@@ -58,19 +57,30 @@ public:
             std::chrono::milliseconds(100),
             std::bind(&FPGANode::publishCurrentState, this));
         
-        // Iniciar hilo para lectura continua del puerto serie
-        serial_reading_thread_ = std::thread(&FPGANode::serialReadingLoop, this);
+        // Iniciar hilo para lectura continua del puerto serie SOLO si está disponible
+        if (serial_fd_ != -1) {
+            serial_reading_thread_ = std::thread(&FPGANode::serialReadingLoop, this);
+            RCLCPP_INFO(this->get_logger(), "Lectura serie iniciado");
+        }
         
-        RCLCPP_INFO(this->get_logger(), "FPGA Node iniciado correctamente");
+        // Publicar estado inicial
+        publishCurrentState();
+        
+        RCLCPP_INFO(this->get_logger(), "FPGA Node Initialized OK");
         RCLCPP_INFO(this->get_logger(), "Servicios disponibles:");
         RCLCPP_INFO(this->get_logger(), "  - ros2 service call /set_lift_state pzb_msgs/srv/SetLift \"{desired_state: 0}\"");
         RCLCPP_INFO(this->get_logger(), "Tópicos publicados:");
         RCLCPP_INFO(this->get_logger(), "  - /current_lift_state (pzb_msgs/msg/LiftState)");
+        RCLCPP_INFO(this->get_logger(), "Iniciando lectura continua del puerto serie...");
     }
     
     ~FPGANode()
     {
+        RCLCPP_INFO(this->get_logger(), "Closing FPGA Node...");
+        
         // Señalar al hilo que debe terminar
+        should_stop_ = true;
+        
         if (serial_reading_thread_.joinable()) {
             serial_reading_thread_.join();
         }
@@ -85,6 +95,8 @@ public:
 private:
     bool setupSerial(const std::string& port, int baudrate)
     {
+        struct termios tty;
+        
         // Abrir puerto serie
         serial_fd_ = open(port.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
         if (serial_fd_ == -1) {
@@ -94,7 +106,6 @@ private:
         }
         
         // Configurar puerto serie
-        struct termios tty;
         if (tcgetattr(serial_fd_, &tty) != 0) {
             RCLCPP_ERROR(this->get_logger(), "Error tcgetattr: %s", strerror(errno));
             close(serial_fd_);
@@ -121,29 +132,29 @@ private:
         cfsetospeed(&tty, speed);
         
         // Configurar 8N1
-        tty.c_cflag &= ~PARENB;        // Sin paridad
-        tty.c_cflag &= ~CSTOPB;        // 1 stop bit
-        tty.c_cflag &= ~CSIZE;         // Limpiar tamaño
-        tty.c_cflag |= CS8;            // 8 bits
-        tty.c_cflag &= ~CRTSCTS;       // Sin control de flujo
-        tty.c_cflag |= CREAD | CLOCAL; // Habilitar lectura
+        tty.c_cflag &= ~PARENB;
+        tty.c_cflag &= ~CSTOPB;
+        tty.c_cflag &= ~CSIZE;
+        tty.c_cflag |= CS8;
+        tty.c_cflag &= ~CRTSCTS;
+        tty.c_cflag |= CREAD | CLOCAL;
         
         // Configurar modo raw
-        tty.c_lflag &= ~ICANON;        // Modo raw
-        tty.c_lflag &= ~ECHO;          // Sin echo
-        tty.c_lflag &= ~ECHOE;         // Sin echo erase
-        tty.c_lflag &= ~ECHONL;        // Sin echo newline
-        tty.c_lflag &= ~ISIG;          // Sin interpretación de señales
+        tty.c_lflag &= ~ICANON;
+        tty.c_lflag &= ~ECHO;
+        tty.c_lflag &= ~ECHOE;
+        tty.c_lflag &= ~ECHONL;
+        tty.c_lflag &= ~ISIG;
         
-        tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Sin control de flujo software
+        tty.c_iflag &= ~(IXON | IXOFF | IXANY);
         tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
         
-        tty.c_oflag &= ~OPOST;         // Sin procesamiento de salida
-        tty.c_oflag &= ~ONLCR;         // Sin conversión NL a CR-NL
+        tty.c_oflag &= ~OPOST;
+        tty.c_oflag &= ~ONLCR;
         
         // Timeout settings
-        tty.c_cc[VTIME] = 1;           // Timeout 0.1 segundos
-        tty.c_cc[VMIN] = 0;            // Lectura no bloqueante
+        tty.c_cc[VTIME] = 1;
+        tty.c_cc[VMIN] = 0;
         
         // Aplicar configuración
         if (tcsetattr(serial_fd_, TCSANOW, &tty) != 0) {
@@ -158,26 +169,24 @@ private:
     
     void initializeMappings()
     {
-        // Mapeo de caracteres FPGA a estados ROS2
         fpga_to_ros_state_ = {
-            {'I', pzb_msgs::msg::LiftState::IDLE},      // Idle
-            {'P', pzb_msgs::msg::LiftState::PRELOAD},   // Preload
-            {'E', pzb_msgs::msg::LiftState::LOAD},      // Delivery -> Load
-            {'T', pzb_msgs::msg::LiftState::RAISE},     // Top -> Raise
-            {'U', pzb_msgs::msg::LiftState::RAISE},     // Up/Increment -> Raise
-            {'D', pzb_msgs::msg::LiftState::UNLOAD}     // Down/Decrement -> Unload
+            {'I', pzb_msgs::msg::LiftState::IDLE},
+            {'P', pzb_msgs::msg::LiftState::PRELOAD},
+            {'L', pzb_msgs::msg::LiftState::LOAD},
+            {'T', pzb_msgs::msg::LiftState::RAISE},
+            {'E', pzb_msgs::msg::LiftState::UNLOAD},
+            {'U', pzb_msgs::msg::LiftState::IDLE},
+            {'D', pzb_msgs::msg::LiftState::IDLE}
         };
         
-        // Mapeo de estados ROS2 a comandos FPGA
         ros_to_fpga_command_ = {
             {pzb_msgs::msg::LiftState::IDLE, 'i'},
             {pzb_msgs::msg::LiftState::PRELOAD, 'p'},
-            {pzb_msgs::msg::LiftState::LOAD, 'e'},      // Load -> delivery
-            {pzb_msgs::msg::LiftState::RAISE, 't'},     // Raise -> top
-            {pzb_msgs::msg::LiftState::UNLOAD, 'd'}     // Unload -> down/decrement
+            {pzb_msgs::msg::LiftState::LOAD, 'l'},
+            {pzb_msgs::msg::LiftState::RAISE, 't'},
+            {pzb_msgs::msg::LiftState::UNLOAD, 'e'}
         };
         
-        // Nombres de estados para logging
         state_names_ = {
             {pzb_msgs::msg::LiftState::IDLE, "IDLE"},
             {pzb_msgs::msg::LiftState::PRELOAD, "PRELOAD"},
@@ -187,11 +196,12 @@ private:
         };
     }
     
+    // 🔧 HILO DE LECTURA SERIAL - SIN MUTEX para evitar deadlock
     void serialReadingLoop()
     {
-        RCLCPP_INFO(this->get_logger(), "Iniciando lectura continua del puerto serie...");
+        RCLCPP_INFO(this->get_logger(), "Hilo de lectura serie activo");
         
-        while (rclcpp::ok() && serial_fd_ != -1) {
+        while (!should_stop_ && rclcpp::ok() && serial_fd_ != -1) {
             char buffer[256];
             ssize_t bytes_read = read(serial_fd_, buffer, sizeof(buffer));
             
@@ -201,19 +211,16 @@ private:
                     
                     auto it = fpga_to_ros_state_.find(received_char);
                     if (it != fpga_to_ros_state_.end()) {
-                        std::lock_guard<std::mutex> lock(state_mutex_);
                         int8_t new_state = it->second;
                         
-                        // Solo actualizar si el estado cambió
-                        if (new_state != current_state_) {
-                            current_state_ = new_state;
+                        // ATOMIC en lugar de MUTEX para evitar deadlock
+                        int8_t old_state = current_state_.exchange(new_state);
+                        
+                        if (new_state != old_state) {
                             RCLCPP_INFO(this->get_logger(), 
                                        "Estado actualizado desde FPGA: %c -> %s", 
                                        received_char, getStateName(new_state).c_str());
                         }
-                        
-                        // Publicar inmediatamente cuando se recibe datos del FPGA
-                        publishCurrentState();
                     } else if (received_char != '\0' && received_char != '\n' && received_char != '\r') {
                         RCLCPP_DEBUG(this->get_logger(), 
                                     "Dato recibido no reconocido: %c (0x%02X)", 
@@ -224,35 +231,42 @@ private:
                 RCLCPP_ERROR(this->get_logger(), "Error leyendo puerto serie: %s", strerror(errno));
             }
             
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // SLEEP MÁS LARGO para reducir carga CPU
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
+        
+        RCLCPP_INFO(this->get_logger(), "Hilo de lectura serie terminado");
     }
     
+    // PUBLISH SIN MUTEX - usa atomic
     void publishCurrentState()
     {
         auto msg = pzb_msgs::msg::LiftState();
-        {
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            msg.state = current_state_;
-        }
+        msg.state = current_state_.load();  // Atomic read
         state_publisher_->publish(msg);
     }
     
+    // CALLBACK SIN BLOQUEO
     void setLiftCallback(const std::shared_ptr<pzb_msgs::srv::SetLift::Request> request,
                         std::shared_ptr<pzb_msgs::srv::SetLift::Response> response)
     {
+        (void)response;
+        
+        RCLCPP_INFO(this->get_logger(), "CALLBACK - desired_state: %d", 
+                   request->desired_state);
+        
         int8_t desired_state = request->desired_state;
         
-        // Validar que el estado deseado sea válido
+        // Validar estado
         auto it = ros_to_fpga_command_.find(desired_state);
         if (it == ros_to_fpga_command_.end()) {
             RCLCPP_ERROR(this->get_logger(), "Estado inválido: %d", desired_state);
             return;
         }
         
-        // Obtener el comando correspondiente para el FPGA
         char fpga_command = it->second;
         
+        // ESCRITURA UART SIN MUTEX
         if (serial_fd_ != -1) {
             ssize_t bytes_written = write(serial_fd_, &fpga_command, 1);
             if (bytes_written == 1) {
@@ -264,8 +278,14 @@ private:
                             strerror(errno));
             }
         } else {
-            RCLCPP_ERROR(this->get_logger(), "Puerto serie no está abierto");
+            RCLCPP_WARN(this->get_logger(), "Puerto serie no disponible - simulando comando: %c (Estado: %s)", 
+                       fpga_command, getStateName(desired_state).c_str());
         }
+        
+        // ACTUALIZAR ESTADO CON ATOMIC
+        current_state_.store(desired_state);
+        RCLCPP_INFO(this->get_logger(), "Estado actualizado localmente: %s", 
+                   getStateName(desired_state).c_str());
     }
     
     std::string getStateName(int8_t state)
@@ -277,17 +297,18 @@ private:
         return "UNKNOWN(" + std::to_string(state) + ")";
     }
     
-    // Miembros privados
+    // MIEMBROS PRIVADOS - Sin mutex problemático
     int serial_fd_;
+    std::atomic<int8_t> current_state_;              // ✅ ATOMIC en lugar de mutex
+    std::atomic<bool> should_stop_;                  // ✅ ATOMIC para control de hilo
+    
     rclcpp::Publisher<pzb_msgs::msg::LiftState>::SharedPtr state_publisher_;
     rclcpp::Service<pzb_msgs::srv::SetLift>::SharedPtr set_lift_service_;
     rclcpp::TimerBase::SharedPtr publish_timer_;
     
     std::thread serial_reading_thread_;
-    std::mutex state_mutex_;
-    int8_t current_state_;
     
-    // Mapeos
+    // Mapeos (solo lectura, no necesitan protección)
     std::map<char, int8_t> fpga_to_ros_state_;
     std::map<int8_t, char> ros_to_fpga_command_;
     std::map<int8_t, std::string> state_names_;
