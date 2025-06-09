@@ -115,13 +115,13 @@ public:
         //------------------------------------------------
         
         // PARA CALCULO DE z_k CON MATRICES HOMOGENEAS
-        quat_aru.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        quat_aru.setRPY(1.5708f - 0.34806f, -M_PI, -M_PI - 1.5708f);
         Eigen::Quaternionf q_cam(quat_aru.w(), quat_aru.x(), quat_aru.y(), quat_aru.z());
         Rc = q_cam.toRotationMatrix();
 
         H_T_aru_axis = Eigen::Matrix4f::Identity();
         H_T_aru_axis.block<3, 3>(0, 0) = Rc;
-        H_T_aru_axis.block<3, 1>(0, 3) << 0.056, 0.0, 0.153;
+        H_T_aru_axis.block<3, 1>(0, 3) << 0.09, 0.0, 0.225;
 
         odometry_msg.header.frame_id = "odom";
     }
@@ -183,8 +183,8 @@ private:
         // Make theta [-pi, pi]
         miu_hat(2) = normalize_angle(miu_hat(2));
 
-        std::cout << "miu_hat: " << miu_hat << "\n"
-                  << std::endl;
+        // std::cout << "miu_hat: " << miu_hat << "\n"
+        //           << std::endl;
 
         // kalman local start
         H_k(0, 2) = -(dt * miu_hat_dot(1));
@@ -218,8 +218,8 @@ private:
             sigma_k = sigma_hat;
         }
 
-        std::cout << "miu_k: " << miu_k << "\n"
-                  << std::endl;
+        RCLCPP_INFO(this->get_logger(), "miu_k[1] : %f", miu_k[1]);
+        // std::cout << "miu_k: " << miu_k << "\n" << std::endl;
 
         // Set and publish ROS msgs
         quat.setRPY(0, 0, miu_k(2));
@@ -257,9 +257,9 @@ private:
         if (msg.markers.size() > 1)
         {
             pos_aru << msg.markers[1].pose.position.x,
-                msg.markers[1].pose.position.y,
-                msg.markers[1].pose.position.z,
-                1.0;
+                       msg.markers[1].pose.position.y,
+                       msg.markers[1].pose.position.z,
+                       1.0;
             pos_axis = H_T_aru_axis * pos_aru;
             nearest_id = msg.markers[1].id;
 
@@ -332,3 +332,11 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
+
+
+
+//[0.950718, 0.602196, 1.44588] 1// en aru 1 hacia aru 5
+
+//[0.976471, 1.20265, 3.07902]  2// Enmedio hacia aru 3
+
+//[1.1587, 1.46771, 1.57136]    3// Enmedio hacia aru 5

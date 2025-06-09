@@ -37,9 +37,8 @@ public:
 
         aru_.detectorSetup();
 
-        wayPointD_ = 100.0;
         scale_ = 0.001f;
-        
+
         // PARAMETROS DE LA CAMARA DEL PZB
         CamMat = (cv::Mat_<double>(3,3) << 640.19980366,0.0,356.53969343,
                                            0.0,631.41159734,241.09692846,
@@ -49,9 +48,10 @@ public:
 
         roi = cv::Rect(18, 13, 614, 338);
 
+        map_initialized = false;
+
         aruList_msg_.header.frame_id = "camera";
         pose_stamped_msg_.header.frame_id = "camera";
-
         nearest_pallet = true;
         
         calCamSys();
@@ -69,20 +69,22 @@ private:
     ARU aru_;
 
     tf2::Quaternion quat;
+    Eigen::Quaternionf q_avg_map;
+    Eigen::Quaternionf q_avg_pal;
 
     cv::Mat aruORI_;
     Eigen::Matrix3f aruORI_eigen;
     Eigen::Vector3f aruPOS_;
-    float wayPointD_;
     float scale_;
 
     std::unordered_map<int, POINTS> aruId_;
-
     std::unordered_map<int, std::deque<Eigen::Quaternionf>> quat_history_;
-    size_t max_quat_history_{10}; 
-    const float max_jump_rad{1.0f}; 
+    size_t max_quat_history_{20}; 
+    const float max_jump_rad{2.5f}; 
 
     cv::Mat CamMat, CamDis;
+    cv::Mat map1, map2;
+    bool map_initialized;
 
     cv::Rect roi;
     cv::Mat undistFrame, cropped;
@@ -102,16 +104,24 @@ private:
         //     cv::Mat frame;
         //     if (!cap.read(frame)) continue;
 
+        if (!map_initialized) {
+            cv::Size imageSize = frame.size();
+            cv::Mat R = cv::Mat::eye(3, 3, CV_64F);
+            cv::initUndistortRectifyMap(CamMat, CamDis, R, CamMat, imageSize, CV_16SC2, map1, map2);
+            map_initialized = true;
+        }
+
         // RECORTAR LA IMAGEN
-        cv::undistort(frame, undistFrame, CamMat, CamDis);
-        cropped = frame(roi);
+        cv::remap(frame, undistFrame, map1, map2, cv::INTER_LINEAR);
+        cropped = undistFrame(roi);
 
         std::vector<std::tuple<cv::Vec3d, cv::Vec3d, int>> detections;
-        std::tie(frame,detections) = aru_.pose_estimation(cropped, CamMat, CamDis);
+        // std::tie(std::ignore, detections) = aru_.pose_estimation(cropped, CamMat, CamDis);
+        std::tie(frame, detections) = aru_.pose_estimation(cropped, CamMat, CamDis);
 
         for (int i = 0; i < (int)detections.size(); i++) {
             auto &[rvec, tvec, id] = detections[i];
-            std::cout<< "tvec : " << tvec <<std::endl;
+            RCLCPP_INFO(this->get_logger(), "tvec[2] : %f", tvec[2]);
             if (id != -1) {
                 cv::Rodrigues(rvec, aruORI_);
                 cv::cv2eigen(aruORI_, aruORI_eigen);
@@ -145,7 +155,6 @@ private:
         auto now = this->get_clock()->now();
         aruList_msg_.header.stamp = now;
 
-        // pzb_msgs::msg::ArucoMarker marker;
         marker.id = id;
 
         if(aruId_.find(id) == aruId_.end()) {
@@ -158,15 +167,14 @@ private:
         marker.pose.position.y = smoother.ma_get(aruPOS_[1], 1) * scale_;
         marker.pose.position.z = smoother.ma_get(aruPOS_[2], 2) * scale_;
 
-        // TO SMOOTH OUT ROTATIONS WITH SLERP (APPARENTLY)
-        auto& q_deque = quat_history_[id];
         Eigen::Quaternionf q(aruORI_eigen);
-        Eigen::Quaternionf q_avg = slerp_calc(q_deque, q);
+        q.normalize();
+        q_avg_map = q;
 
-        marker.pose.orientation.x = q_avg.x();
-        marker.pose.orientation.y = q_avg.y();
-        marker.pose.orientation.z = q_avg.z();
-        marker.pose.orientation.w = q_avg.w();
+        marker.pose.orientation.x = q_avg_map.x();
+        marker.pose.orientation.y = q_avg_map.y();
+        marker.pose.orientation.z = q_avg_map.z();
+        marker.pose.orientation.w = q_avg_map.w();
 
         aruList_msg_.markers.push_back(marker);
     }
@@ -177,20 +185,22 @@ private:
         if(aruId_.find(0) == aruId_.end()) {
             aruId_.emplace(0, POINTS());
         }
+        //ID = 0 FOR PALLETS
         POINTS& smoother = aruId_[0];
 
+        // TO SMOOTH OUT ROTATIONS WITH SLERP (APPARENTLY)
         auto& q_deque = quat_history_[0];
         Eigen::Quaternionf q(aruORI_eigen);
-        Eigen::Quaternionf q_avg = slerp_calc(q_deque, q);
+        q_avg_pal = slerp_calc(q_deque, q);
 
         pose_stamped_msg_.header.stamp = this->get_clock()->now();
         pose_stamped_msg_.pose.position.x = smoother.ma_get(aruPOS_[0],0) * scale_;
         pose_stamped_msg_.pose.position.y = smoother.ma_get(aruPOS_[1],1) * scale_;
         pose_stamped_msg_.pose.position.z = smoother.ma_get(aruPOS_[2],2) * scale_;
-        pose_stamped_msg_.pose.orientation.x = q_avg.x();
-        pose_stamped_msg_.pose.orientation.y = q_avg.y();
-        pose_stamped_msg_.pose.orientation.z = q_avg.z();
-        pose_stamped_msg_.pose.orientation.w = q_avg.w();
+        pose_stamped_msg_.pose.orientation.x = q_avg_pal.x();
+        pose_stamped_msg_.pose.orientation.y = q_avg_pal.y();
+        pose_stamped_msg_.pose.orientation.z = q_avg_pal.z();
+        pose_stamped_msg_.pose.orientation.w = q_avg_pal.w();
         pallet_pub_->publish(pose_stamped_msg_);
     }
 
@@ -203,9 +213,11 @@ private:
             float angle_diff = 2.0f * std::acos(std::abs(dot_product));
 
             if (angle_diff > max_jump_rad) {
+                // return q_deque.back();
                 q_deque.clear();  // RESET
             }
         }
+
         if (q_deque.size() >= max_quat_history_) {
             q_deque.pop_front();
         }
@@ -229,15 +241,16 @@ private:
     // SUBJECT TO CHANGE, NO REASON LEFT NOT TO PUBLISH AS STATIC TF IN URDF
     // ----------------------------------------------------------------------------
     void calCamSys() {
-        quat.setRPY(1.5708f, -M_PI, -M_PI - 1.5708f);
+        // *20 deg tilt downward*
+        quat.setRPY(1.5708f - 0.34806f, -M_PI, -M_PI - 1.5708f); //- 0.34806f
         poseW_.id = -2;
-        poseW_.pose.position.x = 0.056;
+        poseW_.pose.position.x = 0.09;
         poseW_.pose.position.y = 0.0;
-        poseW_.pose.position.z = 0.153;
-        poseW_.pose.orientation.x = quat[3];
-        poseW_.pose.orientation.y = quat[2];
-        poseW_.pose.orientation.z = quat[1];
-        poseW_.pose.orientation.w = quat[0];
+        poseW_.pose.position.z = 0.225;
+        poseW_.pose.orientation.x = quat.x();
+        poseW_.pose.orientation.y = quat.y();
+        poseW_.pose.orientation.z = quat.z();
+        poseW_.pose.orientation.w = quat.w();
         aruList_msg_.markers.push_back(poseW_);
     }
     // ----------------------------------------------------------------------------
