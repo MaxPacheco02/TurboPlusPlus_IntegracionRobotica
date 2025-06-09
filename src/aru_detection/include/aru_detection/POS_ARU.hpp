@@ -51,31 +51,39 @@ public:
         if (!corners.empty()) {
             for (int i = 0; i < (int)ids.size(); i++) {
                 int marker_id = ids[i];
-                aruSeen_[marker_id].push_back(true);
                 
+                aruSeen_[marker_id].push_back(true);
                 if (aruSeen_[marker_id].size() > 1 && std::all_of(aruSeen_[marker_id].begin(), aruSeen_[marker_id].end(), [](bool v){ return v; })) {
                     cv::Vec3d rvec, tvec;
                     
                     if(marker_id == 0){
                         cv::solvePnP(objp_pal_, corners[i], camMatrix, distCoeffs, rvec, tvec);
+                        // cv::aruco::drawDetectedMarkers(frame, corners, ids);
+                        // cv::drawFrameAxes(frame, camMatrix, distCoeffs, rvec, tvec, 20.0);
                     }else{
                         cv::solvePnP(objp_local_, corners[i], camMatrix, distCoeffs, rvec, tvec);   
+                        // cv::aruco::drawDetectedMarkers(frame, corners, ids);
+                        // cv::drawFrameAxes(frame, camMatrix, distCoeffs, rvec, tvec, 20.0);
                     }
-
                     cv::aruco::drawDetectedMarkers(frame, corners, ids);
                     cv::drawFrameAxes(frame, camMatrix, distCoeffs, rvec, tvec, 20.0);
-
+                    
                     aru_ROT_ = cv::Mat(rvec);
                     aru_TRAN_ = cv::Mat(tvec);
 
                     result.emplace_back(rvec, tvec, marker_id);
                 }
             }
-        } else {
+        }else {
             result.clear();
             result.emplace_back(cv::Vec3d(0,0,0), cv::Vec3d(0,0,0), -1);
             aruSeen_.clear();
         }
+
+        // else{
+        //     result.clear();
+        //     result.emplace_back(cv::Vec3d(0,0,0), cv::Vec3d(0,0,0), -1);
+        // }
 
         return {frame, result};
     }

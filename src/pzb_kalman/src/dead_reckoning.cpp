@@ -115,13 +115,13 @@ public:
         //------------------------------------------------
         
         // PARA CALCULO DE z_k CON MATRICES HOMOGENEAS
-        quat_aru.setRPY(1.5708f - 0.174533f, -M_PI, -M_PI - 1.5708f);
+        quat_aru.setRPY(1.5708f - 0.34806f, -M_PI, -M_PI - 1.5708f);
         Eigen::Quaternionf q_cam(quat_aru.w(), quat_aru.x(), quat_aru.y(), quat_aru.z());
         Rc = q_cam.toRotationMatrix();
 
         H_T_aru_axis = Eigen::Matrix4f::Identity();
         H_T_aru_axis.block<3, 3>(0, 0) = Rc;
-        H_T_aru_axis.block<3, 1>(0, 3) << 0.056, 0.0, 0.195;
+        H_T_aru_axis.block<3, 1>(0, 3) << 0.09, 0.0, 0.225;
 
         odometry_msg.header.frame_id = "odom";
     }
@@ -183,8 +183,8 @@ private:
         // Make theta [-pi, pi]
         miu_hat(2) = normalize_angle(miu_hat(2));
 
-        std::cout << "miu_hat: " << miu_hat << "\n"
-                  << std::endl;
+        // std::cout << "miu_hat: " << miu_hat << "\n"
+        //           << std::endl;
 
         // kalman local start
         H_k(0, 2) = -(dt * miu_hat_dot(1));
@@ -218,8 +218,8 @@ private:
             sigma_k = sigma_hat;
         }
 
-        std::cout << "miu_k: " << miu_k << "\n"
-                  << std::endl;
+        RCLCPP_INFO(this->get_logger(), "miu_k[1] : %f", miu_k[1]);
+        // std::cout << "miu_k: " << miu_k << "\n" << std::endl;
 
         // Set and publish ROS msgs
         quat.setRPY(0, 0, miu_k(2));
