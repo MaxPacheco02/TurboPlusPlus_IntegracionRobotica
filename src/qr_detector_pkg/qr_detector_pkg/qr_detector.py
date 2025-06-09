@@ -24,6 +24,8 @@ class QRDetectorNode(Node):
             self.get_logger().info(f"QR detectado: {data}")
             msg = String()
             msg.data = data
+            if msg.data == "circular":
+                msg.data = "oxidado"
             self.publisher_.publish(msg)
 
             # Dibuja en la ventana
