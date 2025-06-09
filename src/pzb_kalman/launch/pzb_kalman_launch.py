@@ -9,7 +9,6 @@ def generate_launch_description():
     kalman_node = Node(
         package='pzb_kalman',
         executable='dead_reckoning',
-        output='screen',
     )
 
     return LaunchDescription([kalman_node])
