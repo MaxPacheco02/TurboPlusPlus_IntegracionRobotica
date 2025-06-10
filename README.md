@@ -132,7 +132,12 @@ sudo apt install ros-$ROS_DISTRO-navigation2
 pip install pillow numpy pyserial
 ```
 
+### What to build for control and gazebo
 
+```
+colcon build --packages-select pzb_msgs pzb_control pzb_description ros_gz  ros_gz_bridge  ros_gz_image  ros_gz_interfaces  ros_gz_point_cloud  ros_gz_sim  ros_gz_sim_demos  ros_ign  ros_ign_bridge  \
+                               ros_ign_gazebo  ros_ign_gazebo_demos  ros_ign_image  ros_ign_interfaces  test_ros_gz_bridge  tools
+```
 
 ## Team members:
 ### *Andrés Carrizales - A00832679*

@@ -87,8 +87,6 @@ ament_target_dependencies(mcl_node_test ${DEPENDENCIES})
 # Install Python executables
 install(PROGRAMS
   scripts/display_lcd_node.py
-  scripts/convert2base64.py
-  scripts/send_base64.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
