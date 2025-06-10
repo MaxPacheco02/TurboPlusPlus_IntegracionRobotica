@@ -4,3 +4,4 @@ build/
 install/
 */.vscode
 .vscode
+__pycache__/
