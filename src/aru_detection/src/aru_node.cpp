@@ -79,7 +79,7 @@ private:
 
     std::unordered_map<int, POINTS> aruId_;
     std::unordered_map<int, std::deque<Eigen::Quaternionf>> quat_history_;
-    size_t max_quat_history_{20}; 
+    size_t max_quat_history_{30}; 
     const float max_jump_rad{2.5f}; 
 
     cv::Mat CamMat, CamDis;
@@ -246,7 +246,7 @@ private:
         poseW_.id = -2;
         poseW_.pose.position.x = 0.09;
         poseW_.pose.position.y = 0.0;
-        poseW_.pose.position.z = 0.225;
+        poseW_.pose.position.z = 0.222;
         poseW_.pose.orientation.x = quat.x();
         poseW_.pose.orientation.y = quat.y();
         poseW_.pose.orientation.z = quat.z();

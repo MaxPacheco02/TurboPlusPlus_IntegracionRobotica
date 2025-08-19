@@ -1,0 +1,8 @@
+image: map_lidar.png
+resolution: 0.0066
+# image: map.png
+# resolution: 0.01
+origin: [-1.63000000, -1.01300000, 0.00000]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

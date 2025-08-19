@@ -121,7 +121,7 @@ public:
 
         H_T_aru_axis = Eigen::Matrix4f::Identity();
         H_T_aru_axis.block<3, 3>(0, 0) = Rc;
-        H_T_aru_axis.block<3, 1>(0, 3) << 0.09, 0.0, 0.225;
+        H_T_aru_axis.block<3, 1>(0, 3) << 0.09, 0.0, 0.222;
 
         odometry_msg.header.frame_id = "odom";
     }

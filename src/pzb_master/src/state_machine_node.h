@@ -34,6 +34,7 @@
 
 #include "pzb_msgs/msg/lift_state.hpp"
 #include "pzb_msgs/srv/lift_service.hpp"
+#include "pzb_msgs/srv/set_lift.hpp"
 #include "pzb_msgs/srv/movement_request_service.hpp"
 #include "pzb_msgs/msg/trailer_bearing.hpp"
 
@@ -101,7 +102,7 @@ private:
 
     // State variables
     State state_;
-    LIFTSTATE lift_state_;
+    int lift_state_;
     PSState ps_state_;
     PCState pc_state_;
     TSState ts_state_;
@@ -153,7 +154,7 @@ private:
 
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
-    rclcpp::Client<pzb_msgs::srv::LiftService>::SharedPtr lift_client_;
+    rclcpp::Client<pzb_msgs::srv::SetLift>::SharedPtr lift_client_;
     rclcpp::Client<pzb_msgs::srv::MovementRequestService>::SharedPtr movement_client_;
     rclcpp::Client<std_srvs::srv::Empty>::SharedPtr rst_ref_id_client_;
 
@@ -185,8 +186,11 @@ private:
         {0, 0, 0, 0}};
 
     std::map<std::string, double> cam_bearing_angles = {
-        {"diagonal", NAN},
-        {"oxidado", NAN},
-        {"rojo", NAN},
+        {"diagonal1", NAN},
+        {"oxidado1", NAN},
+        {"rojo1", NAN},
+        {"diagonal2", NAN},
+        {"oxidado2", NAN},
+        {"rojo2", NAN},
     };
 };

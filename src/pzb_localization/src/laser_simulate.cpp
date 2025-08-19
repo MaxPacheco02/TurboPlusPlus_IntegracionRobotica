@@ -62,13 +62,13 @@ public:
                 }
             });
 
-        laser_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/fwd_avoidance_lidar", 10);
+        laser_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/lidar", 10);
         
         // Declare lidar parameters
-        this->declare_parameter("laser_angle_min", -M_PI);          // Start angle (radians)
-        this->declare_parameter("laser_angle_max", M_PI);           // End angle (radians)
+        this->declare_parameter("laser_angle_min", -M_PI/4);          // Start angle (radians)
+        this->declare_parameter("laser_angle_max", M_PI/4);           // End angle (radians)
         // this->declare_parameter("laser_angle_increment", M_PI/180 * 18); // Angular resolution
-        this->declare_parameter("laser_angle_increment", M_PI/180 * 5); // Angular resolution (1 degree)
+        this->declare_parameter("laser_angle_increment", M_PI/180); // Angular resolution (1 degree)
         this->declare_parameter("laser_range_min", 0.1);           // Minimum range (meters)
         this->declare_parameter("laser_range_max", 1.0);           // Maximum range (meters)
         this->declare_parameter("laser_frame_id", "base_axis");     // Frame ID

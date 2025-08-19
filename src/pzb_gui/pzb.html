@@ -150,7 +150,7 @@
             No image received
         </div>
         <div class="camera-status">
-            <div>Topic: /zed_rgbd/image</div>
+            <div>Topic: /signal_frame</div>
             <div>Status: <span id="camera-status">Waiting...</span></div>
             <div>FPS: <span id="camera-fps">0</span></div>
         </div>
@@ -460,12 +460,12 @@
         function subscribeToCameraTopic() {
             const subscribeMsg = {
                 op: 'subscribe',
-                topic: '/zed_rgbd/image',
-                type: 'sensor_msgs/Image'
+                topic: '/signal_frame',
+                type: 'sensor_msgs/CompressedImage'
             };
 
             rosSocket.send(JSON.stringify(subscribeMsg));
-            console.log('📡 Subscribed to /zed_rgbd/image topic');
+            console.log('📡 Subscribed to /signal_frame topic');
             document.getElementById('camera-status').textContent = 'Subscribed';
         }
 
@@ -509,7 +509,7 @@
             }
 
             // Handle camera frame messages
-            if (message.topic === '/zed_rgbd/image' && message.msg) {
+            if (message.topic === '/signal_frame' && message.msg) {
                 handleCameraFrame(message.msg);
             }
         }
@@ -517,23 +517,19 @@
         // Handle camera frame data
         function handleCameraFrame(imageMsg) {
             try {
-                console.log('📷 handleCameraFrame called');
+                console.log('📷 handleCameraFrame called (CompressedImage)');
                 console.log('📷 imageMsg structure:', {
                     hasData: !!imageMsg.data,
                     dataType: typeof imageMsg.data,
                     dataLength: imageMsg.data ? imageMsg.data.length : 'no data',
-                    encoding: imageMsg.encoding,
-                    width: imageMsg.width,
-                    height: imageMsg.height,
-                    step: imageMsg.step,
-                    isBigendian: imageMsg.is_bigendian
+                    format: imageMsg.format
                 });
 
                 cameraFrameCount++;
                 const now = Date.now();
 
                 // Calculate FPS
-                if (now - lastCameraUpdate > 2000) {
+                if (now - lastCameraUpdate > 1000) {
                     cameraFPS = cameraFrameCount;
                     cameraFrameCount = 0;
                     lastCameraUpdate = now;
@@ -547,56 +543,34 @@
                     return;
                 }
 
-                // Convert string data to byte array if needed
+                // For CompressedImage, data is already in compressed format (JPEG/PNG)
                 let imageData;
-                const encoding = imageMsg.encoding;
-                console.log('📷 Processing encoding:', encoding);
+                const format = imageMsg.format || 'jpeg'; // Default to jpeg
+                console.log('📷 Processing format:', format);
 
-                // Convert string data to Uint8Array for processing
-                let dataArray;
                 if (typeof imageMsg.data === 'string') {
-                    // Convert base64 string to byte array
-                    const binaryString = atob(imageMsg.data);
-                    dataArray = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        dataArray[i] = binaryString.charCodeAt(i);
-                    }
-                    console.log('📷 Converted string to byte array, length:', dataArray.length);
-                } else if (Array.isArray(imageMsg.data)) {
-                    // Convert array to Uint8Array
-                    dataArray = new Uint8Array(imageMsg.data);
-                    console.log('📷 Converted array to Uint8Array, length:', dataArray.length);
-                } else {
-                    dataArray = imageMsg.data;
-                }
-
-                if (encoding === 'rgb8' || encoding === 'bgr8') {
-                    console.log('📷 Converting raw RGB/BGR data...');
-                    // Create a new imageMsg object with the byte array
-                    const processedImageMsg = {
-                        ...imageMsg,
-                        data: dataArray
-                    };
-                    imageData = convertRawImageToBase64(processedImageMsg);
-                } else if (encoding === 'compressed' || encoding.includes('jpeg') || encoding.includes('png')) {
-                    console.log('📷 Using compressed image data...');
-                    if (typeof imageMsg.data === 'string') {
-                        imageData = 'data:image/jpeg;base64,' + imageMsg.data;
+                    // Data is already base64 encoded
+                    if (format.includes('png')) {
+                        imageData = 'data:image/png;base64,' + imageMsg.data;
                     } else {
-                        const base64String = btoa(String.fromCharCode.apply(null, dataArray));
+                        imageData = 'data:image/jpeg;base64,' + imageMsg.data;
+                    }
+                    console.log('📷 Using string data directly');
+                } else {
+                    // Convert byte array to base64
+                    let base64String;
+                    if (Array.isArray(imageMsg.data)) {
+                        base64String = btoa(String.fromCharCode.apply(null, new Uint8Array(imageMsg.data)));
+                    } else {
+                        base64String = btoa(String.fromCharCode.apply(null, imageMsg.data));
+                    }
+
+                    if (format.includes('png')) {
+                        imageData = 'data:image/png;base64,' + base64String;
+                    } else {
                         imageData = 'data:image/jpeg;base64,' + base64String;
                     }
-                } else if (encoding === 'mono8') {
-                    console.log('📷 Converting mono8 data...');
-                    const processedImageMsg = {
-                        ...imageMsg,
-                        data: dataArray
-                    };
-                    imageData = convertMonoImageToBase64(processedImageMsg);
-                } else {
-                    console.log('⚠️ Unsupported image encoding:', encoding);
-                    document.getElementById('camera-status').textContent = 'Unsupported: ' + encoding;
-                    return;
+                    console.log('📷 Converted byte array to base64');
                 }
 
                 console.log('📷 Image data generated, length:', imageData ? imageData.length : 'null');
@@ -604,15 +578,15 @@
                 // Update the image element
                 const cameraDiv = document.getElementById('camera-image');
                 if (cameraDiv) {
-                    cameraDiv.innerHTML = `<img src="${imageData}" alt="Camera feed" onload="console.log('📷 Image loaded successfully')" onerror="console.error('❌ Image failed to load')">`;
+                    cameraDiv.innerHTML = `<img src="${imageData}" alt="Camera feed" onload="console.log('📷 CompressedImage loaded successfully')" onerror="console.error('❌ CompressedImage failed to load')">`;
                     console.log('📷 Image element updated');
                 }
 
                 document.getElementById('camera-status').textContent = 'Receiving';
-                console.log('✅ Camera frame processed successfully:', encoding, imageMsg.width + 'x' + imageMsg.height);
+                console.log('✅ CompressedImage frame processed successfully:', format);
 
             } catch (error) {
-                console.error('❌ Error processing camera frame:', error);
+                console.error('❌ Error processing compressed camera frame:', error);
                 console.error('❌ Error stack:', error.stack);
                 document.getElementById('camera-status').textContent = 'Error: ' + error.message;
             }
@@ -908,7 +882,7 @@
 
             console.log('✅ Initialization complete!');
             console.log('🎮 Use the controls to test robot rotation!');
-            console.log('📷 Camera feed will appear when /zed_rgbd/image topic publishes data');
+            console.log('📷 Camera feed will appear when /signal_frame topic publishes data');
         }
 
         // Global control variables

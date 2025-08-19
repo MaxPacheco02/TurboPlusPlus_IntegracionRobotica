@@ -60,15 +60,46 @@ public:
                                         &MovementTrackerNode::reset_id_srv_handle, this, _1, _2));
 
         ref_id_pub_ = this->create_publisher<std_msgs::msg::Int64>("/movement_ref_id", 10);
+        nav_ref_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
+
+        odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+            "/odom", 10,
+            [this](const nav_msgs::msg::Odometry &msg)
+            {
+                pose_ = msg.pose.pose;
+            });
+
+        pid_e_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+            "/pid_abs_err", 10,
+            [this](const std_msgs::msg::Float64 &msg)
+            {
+                pid_err_ = msg.data;
+            });
+
+        vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            "/cmd_vel", 10,
+            [this](const geometry_msgs::msg::Twist &msg)
+            {
+                vel_ = std::sqrt(
+                    std::pow(msg.linear.x, 2) +
+                    std::pow(msg.angular.z, 2));
+            });
 
         update_timer_ = this->create_wall_timer(100ms, std::bind(&MovementTrackerNode::update, this));
 
         ref_id_msg.data = 0;
+
+        // Add 10 seconds to latest update to avoid false positives in detection condition
+        last_movement_update_ = this->get_clock()->now() - rclcpp::Duration(0, 10000 * 1e6);
     }
 
 private:
     rclcpp::Publisher<std_msgs::msg::Int64>::SharedPtr ref_id_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_ref_pub_;
+
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr vel_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr pid_e_sub_;
 
     rclcpp::Client<pzb_msgs::srv::TrailerAlign>::SharedPtr trailer_align_client_;
     rclcpp::Client<std_srvs::srv::Empty>::SharedPtr pallet_align_client_;
@@ -79,12 +110,29 @@ private:
 
     rclcpp::TimerBase::SharedPtr update_timer_;
 
+    rclcpp::Time last_movement_update_;
+
     std_msgs::msg::Int64 ref_id_msg;
+
+    geometry_msgs::msg::Pose pose_, goal_;
+
+    bool new_mov_ref{false};
+    double pid_err_{0.0};
+    double vel_{0};
 
     // Trailer aligning service call. Assumes the trailer is being detected.
     void movement_srv_handle(const std::shared_ptr<pzb_msgs::srv::MovementRequestService::Request> request,
                              std::shared_ptr<pzb_msgs::srv::MovementRequestService::Response> response)
     {
+        last_movement_update_ = this->get_clock()->now();
+
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MOVEMENT CLI: %s %d", request->type.c_str(), request->is_alignment_to_trailer);
+        if (new_mov_ref || vel_ > 0)
+        {
+            RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Robot in movement");
+            return;
+        }
+
         if (request->type == "align")
         {
             if (request->is_alignment_to_trailer)
@@ -95,23 +143,35 @@ private:
         else
         {
             if (request->type == "nav")
-                nav_ref_pub_->publish(request->ref_pose);
+            {
+                geometry_msgs::msg::PoseStamped ref;
+                ref.pose = request->ref_pose.pose;
+                ref.header.frame_id = "odom";
+                ref.header.stamp = this->get_clock()->now();
+
+                nav_ref_pub_->publish(ref);
+            }
             else // request->type == "approach"
                 call_approach_cli(request->approach_distance);
         }
 
-        ref_id_msg.data++;
+        new_mov_ref = true;
     }
 
     // Pallet aligning service call.
     void reset_id_srv_handle(const std::shared_ptr<std_srvs::srv::Empty::Request> request,
                              std::shared_ptr<std_srvs::srv::Empty::Response> response)
     {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "RESET ID CLI");
+
+        new_mov_ref = false;
         ref_id_msg.data = 0;
     }
 
     void call_trailer_cli(std::string trailer_choice)
     {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "TRAILER CLI");
+
         auto request = std::make_shared<pzb_msgs::srv::TrailerAlign::Request>();
         request->trailer_type = trailer_choice;
 
@@ -131,6 +191,8 @@ private:
 
     void call_pallet_cli()
     {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "PALLET CLI");
+
         auto request = std::make_shared<std_srvs::srv::Empty::Request>();
 
         while (!pallet_align_client_->wait_for_service(1s))
@@ -149,6 +211,8 @@ private:
 
     void call_approach_cli(double d)
     {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "APPROACH CLI");
+
         auto request = std::make_shared<pzb_msgs::srv::Approach::Request>();
         request->distance = d;
 
@@ -168,6 +232,14 @@ private:
 
     void update()
     {
+        // If a new movement was required, and the pzb is [almost] there, and it has already stopped.
+        if (new_mov_ref && pid_err_ < 0.1 && vel_ == 0 && 
+            ((this->get_clock()->now() - last_movement_update_) > rclcpp::Duration(0, 500 * 1e6))
+        )
+        {
+            ref_id_msg.data++;
+            new_mov_ref = false;
+        }
         ref_id_pub_->publish(ref_id_msg);
     }
 };

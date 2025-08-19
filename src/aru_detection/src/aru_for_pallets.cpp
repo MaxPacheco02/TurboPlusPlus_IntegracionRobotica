@@ -29,7 +29,7 @@ public:
         Eigen::Quaternionf q_cam(quat.w(),quat.x(),quat.y(),quat.z());
         Rc = q_cam.toRotationMatrix();
         H_T_base_axis.block<3, 3>(0,0) = Rc;
-        H_T_base_axis.block<3, 1>(0,3) << 0.09, 0.0, 0.225;
+        H_T_base_axis.block<3, 1>(0,3) << 0.09, 0.0, 0.222;
         
         // PARA CORRECION DE ROTACION DE ARUCO
         R_corr_aru = Eigen::AngleAxisf(roll_correction,  Eigen::Vector3f::UnitX()) *

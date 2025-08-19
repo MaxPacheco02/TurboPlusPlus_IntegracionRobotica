@@ -18,6 +18,7 @@ Panels:
         - /Pose1
         - /Pose2
         - /Pose3
+        - /Pose4
       Splitter Ratio: 0.4899713397026062
     Tree Height: 908
   - Class: rviz_common/Selection
@@ -38,7 +39,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: LaserScan
+    SyncSource: PointCloud2
 Visualization Manager:
   Class: ""
   Displays:
@@ -61,19 +62,101 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: true
     - Class: rviz_default_plugins/TF
-      Enabled: false
+      Enabled: true
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        aruco_center:
+          Value: true
+        base_axis:
+          Value: true
+        base_footprint:
+          Value: true
+        base_link:
+          Value: true
+        camera:
+          Value: true
+        caster_link:
+          Value: true
+        id1:
+          Value: true
+        id10:
+          Value: true
+        id11:
+          Value: true
+        id12:
+          Value: true
+        id13:
+          Value: true
+        id2:
+          Value: true
+        id3:
+          Value: true
+        id4:
+          Value: true
+        id5:
+          Value: true
+        id6:
+          Value: true
+        id7:
+          Value: true
+        id8:
+          Value: true
+        id9:
+          Value: true
+        laser:
+          Value: true
+        odom:
+          Value: true
+        pallet_aru:
+          Value: true
       Marker Scale: 0.5
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
       Tree:
-        {}
+        odom:
+          base_axis:
+            base_footprint:
+              base_link:
+                caster_link:
+                  {}
+            camera:
+              aruco_center:
+                {}
+              pallet_aru:
+                {}
+            laser:
+              {}
+          id1:
+            {}
+          id10:
+            {}
+          id11:
+            {}
+          id12:
+            {}
+          id13:
+            {}
+          id2:
+            {}
+          id3:
+            {}
+          id4:
+            {}
+          id5:
+            {}
+          id6:
+            {}
+          id7:
+            {}
+          id8:
+            {}
+          id9:
+            {}
       Update Interval: 0
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -593,6 +676,26 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /marker_array
       Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Pose
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pallet/goal_pose
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -630,7 +733,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /avoidance/goal_pose
+        Value: /goal_pose
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:
@@ -645,7 +748,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: 0.004999999888241291
+      Angle: -1.6099995374679565
       Class: rviz_default_plugins/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -655,11 +758,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 394.00445556640625
+      Scale: -452.8061828613281
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 0.7750294804573059
-      Y: 0.1304510235786438
+      X: -0.7167567610740662
+      Y: -0.6876140832901001
     Saved: ~
 Window Geometry:
   Displays:

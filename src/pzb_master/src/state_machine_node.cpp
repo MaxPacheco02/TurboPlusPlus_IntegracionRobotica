@@ -4,16 +4,19 @@ StateMachineNode::StateMachineNode() : Node("state_machine_node")
 {
     using std::placeholders::_1;
 
+    set_v_goals();
+
     lift_sub_ = this->create_subscription<pzb_msgs::msg::LiftState>(
-        "/lift_state", 10,
+        "/current_lift_state", 10,
         [this](const pzb_msgs::msg::LiftState &msg)
         {
             loaded_lift_ = ((msg.state == pzb_msgs::msg::LiftState::LOAD) ||
                             (msg.state == pzb_msgs::msg::LiftState::RAISE));
+            lift_state_ = msg.state;
         });
 
     pallet_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/pallet_pos", 10,
+        "/pallet/goal_pose", 10,
         [this](const geometry_msgs::msg::PoseStamped &msg)
         {
             last_ar_pallet_update_ = this->get_clock()->now();
@@ -38,14 +41,17 @@ StateMachineNode::StateMachineNode() : Node("state_machine_node")
         "/yolo_bearing_angles", 10,
         [this](const pzb_msgs::msg::TrailerBearing &msg)
         {
-            cam_bearing_angles["diagonal"] = msg.diagonal;
-            cam_bearing_angles["oxidado"] = msg.oxidado;
-            cam_bearing_angles["rojo"] = msg.diagonal;
+            cam_bearing_angles["diagonal1"] = msg.diagonal1;
+            cam_bearing_angles["oxidado1"] = msg.oxidado1;
+            cam_bearing_angles["rojo1"] = msg.rojo1;
+            cam_bearing_angles["diagonal2"] = msg.diagonal2;
+            cam_bearing_angles["oxidado2"] = msg.oxidado2;
+            cam_bearing_angles["rojo2"] = msg.rojo2;
         });
 
     marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/virtual_goals_marker_array", 10);
 
-    lift_client_ = this->create_client<pzb_msgs::srv::LiftService>("lift_service");
+    lift_client_ = this->create_client<pzb_msgs::srv::SetLift>("/set_lift_state");
     movement_client_ = this->create_client<pzb_msgs::srv::MovementRequestService>("movement_service");
     rst_ref_id_client_ = this->create_client<std_srvs::srv::Empty>("reset_ref_id_service");
 
@@ -53,7 +59,7 @@ StateMachineNode::StateMachineNode() : Node("state_machine_node")
 
     // Initialize state variables
     state_ = State::PALLET_SEARCH;
-    lift_state_ = LIFTSTATE::IDLE;
+    lift_state_ = 0;
     ps_state_ = PSState::IDLE;
     ts_state_ = TSState::LOAD;
     pd_state_ = PDState::LOAD;
@@ -80,15 +86,29 @@ StateMachineNode::StateMachineNode() : Node("state_machine_node")
 
     req_id_ = 0;
     reached_id_ = 0;
-    trailer_distance_ = 0.20; // Distance to trailer in meters
-    pallet_distance_ = 0.05;  // Distance to pallet in meters
-    last_ar_pallet_update_ = this->get_clock()->now();
-    last_qr_update_ = this->get_clock()->now();
+    trailer_distance_ = 0.30; // Distance to trailer in meters
+    pallet_distance_ = 0.20;  // Distance to pallet in meters
+
+    // Add 10 seconds to latest update to avoid false positives in detection condition
+    last_ar_pallet_update_ = this->get_clock()->now() - rclcpp::Duration(0, 10000 * 1e6);
+    last_qr_update_ = this->get_clock()->now() - rclcpp::Duration(0, 10000 * 1e6);
 }
 
 void StateMachineNode::update()
 {
     rclcpp::Time now = this->get_clock()->now();
+
+    if (trailer_goal_name_ != "")
+    {
+        RCLCPP_INFO(this->get_logger(), "trailer name: %s, Bearing desired: %f, is ok? %d",
+                    trailer_goal_name_.c_str(),
+                    cam_bearing_angles[trailer_goal_name_ + "1"],
+                    std::isnan(cam_bearing_angles[trailer_goal_name_ + "1"]));
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "QR NOT DETECTED!");
+    }
 
     // 100 ms
     if (now - last_ar_pallet_update_ < rclcpp::Duration(0, 100 * 1e6))
@@ -101,7 +121,11 @@ void StateMachineNode::update()
     else
         qr_detected_ = false;
 
-    pallet_detected_ = ar_pallet_detected_ && qr_detected_;
+    // Ideally, it should be like this. But the qr detection is not optimized right now.
+    // pallet_detected_ = ar_pallet_detected_ && qr_detected_;
+    pallet_detected_ = ar_pallet_detected_;
+
+    // RCLCPP_INFO(this->get_logger(), "ar: %d, qr: %d, pallet: %d", ar_pallet_detected_, qr_detected_, pallet_detected_);
 
     state_switch();
 }
@@ -132,7 +156,9 @@ void StateMachineNode::state_switch()
             pallet_collection_completed_ = false;
             pc_state_ = PCState::IDLE;
             ts_state_ = TSState::LOAD;
-            state_ = State::TRAILER_SEARCH;
+            // state_ = State::TRAILER_SEARCH;
+            // TODO: FIX THIS trailer search JE!
+            state_ = State::PALLET_DELIVERY;
         }
         else
         {
@@ -189,6 +215,11 @@ std::string StateMachineNode::state_to_string(State s)
 
 Goal StateMachineNode::get_next_rand_wp()
 {
+    if (v_goals.size() == 0)
+    {
+        RCLCPP_ERROR(this->get_logger(), "VIRTUAL GOALS NOT SET");
+        return Goal{};
+    }
     return v_goals[std::rand() % v_goals.size()];
 }
 
@@ -199,8 +230,8 @@ void StateMachineNode::pallet_search()
     case PSState::IDLE:
         RCLCPP_INFO(this->get_logger(), "[PS] IDLE - Starting pallet search");
         ps_state_ = PSState::NAVIGATE;
-        req_id_++;
-        call_movement_service("nav", get_next_rand_wp(), false, "", 0);
+        // req_id_++;
+        // call_movement_service("nav", get_next_rand_wp(), false, "", 0);
 
     case PSState::NAVIGATE:
         RCLCPP_INFO(this->get_logger(), "[PS] NAVIGATE - Scanning for pallets...");
@@ -226,31 +257,36 @@ void StateMachineNode::pallet_collection()
     {
     case PCState::IDLE:
         RCLCPP_INFO(this->get_logger(), "[PC] IDLE");
-        if (!preload_sent_)
-        {
-            call_lift_service(pzb_msgs::msg::LiftState::PRELOAD);
-            preload_sent_ = true;
-        }
-        if (lift_state_ == LIFTSTATE::PRELOAD)
-        {
-            pc_state_ = PCState::PRELOAD;
-            preload_sent_ = false;
-        }
-        break;
-
-    case PCState::PRELOAD:
-        RCLCPP_INFO(this->get_logger(), "[PC] PRELOAD");
         if (!req_sent_)
         {
             call_movement_service("align", Goal{}, false, "", 0);
             req_id_++;
             req_sent_ = true;
         }
-        if (req_sent_ && req_id_ == reached_id_)
+        if (req_sent_ && (req_id_ == reached_id_))
         {
-            pc_state_ = PCState::ALIGN;
+            pc_state_ = PCState::PRELOAD;
             req_sent_ = false;
         }
+
+        RCLCPP_INFO(this->get_logger(), "req sent: %d, req_id: %d, reached_id: %d", req_sent_, req_id_, reached_id_);
+        break;
+
+    case PCState::PRELOAD:
+        RCLCPP_INFO(this->get_logger(), "[PC] PRELOAD");
+        if (!preload_sent_)
+        {
+            call_lift_service(pzb_msgs::msg::LiftState::PRELOAD);
+            preload_sent_ = true;
+        }
+        if (lift_state_ == pzb_msgs::msg::LiftState::PRELOAD)
+        {
+            pc_state_ = PCState::ALIGN;
+            preload_sent_ = false;
+        }
+        // RCLCPP_INFO(this->get_logger(), "lift state: %d", lift_state_);
+
+
         break;
 
     case PCState::ALIGN:
@@ -261,11 +297,14 @@ void StateMachineNode::pallet_collection()
             req_id_++;
             approach_sent_ = true;
         }
-        else if (req_id_ == reached_id_)
+        if (approach_sent_ && (req_id_ == reached_id_))
         {
             pc_state_ = PCState::APPROACH;
             approach_sent_ = false;
         }
+
+        RCLCPP_INFO(this->get_logger(), "req sent: %d, req_id: %d, reached_id: %d", approach_sent_, req_id_, reached_id_);
+
         break;
 
     case PCState::APPROACH:
@@ -275,7 +314,7 @@ void StateMachineNode::pallet_collection()
             call_lift_service(pzb_msgs::msg::LiftState::LOAD);
             raise_sent_ = true;
         }
-        if (lift_state_ == LIFTSTATE::LOAD)
+        if (lift_state_ == pzb_msgs::msg::LiftState::LOAD)
         {
             pc_state_ = PCState::LOAD;
             raise_sent_ = false;
@@ -306,8 +345,10 @@ void StateMachineNode::trailer_search()
 
     case TSState::SEARCH:
         RCLCPP_INFO(this->get_logger(), "[TS] SEARCH - Looking for trailer...");
+        RCLCPP_INFO(this->get_logger(), "angle to look for: %d", cam_bearing_angles[trailer_goal_name_ + "1"]);
+        RCLCPP_INFO(this->get_logger(), "trailer name: %s", trailer_goal_name_.c_str());
         // If the goal trailer is seen...
-        if (!std::isnan(cam_bearing_angles[trailer_goal_name_]) && loaded_lift_)
+        if (!std::isnan(cam_bearing_angles[trailer_goal_name_ + "1"]) && trailer_goal_name_ != "" && loaded_lift_)
         {
             trailer_search_completed_ = true; // Signal completion
             req_id_ = 0;
@@ -328,20 +369,9 @@ void StateMachineNode::pallet_delivery()
     {
     case PDState::LOAD:
         RCLCPP_INFO(this->get_logger(), "[PD] LOADED");
-        if (!raise_sent_)
-        {
-            call_lift_service(pzb_msgs::msg::LiftState::RAISE);
-            raise_sent_ = true;
-        }
-        if (lift_state_ == LIFTSTATE::RAISE)
-        {
-            pd_state_ = PDState::RAISE;
-            raise_sent_ = false;
-        }
-        break;
 
-    case PDState::RAISE:
-        RCLCPP_INFO(this->get_logger(), "[PD] RAISE");
+        RCLCPP_INFO(this->get_logger(), "req sent: %d, req_id: %d, reached_id: %d", req_sent_, req_id_, reached_id_);
+
         if (!req_sent_)
         {
             call_movement_service("align", Goal{}, true, trailer_goal_name_, 0);
@@ -350,9 +380,24 @@ void StateMachineNode::pallet_delivery()
         }
         if (req_sent_ && req_id_ == reached_id_)
         {
-            pd_state_ = PDState::ALIGN;
+            pd_state_ = PDState::RAISE;
             req_sent_ = false;
         }
+        break;
+
+    case PDState::RAISE:
+        RCLCPP_INFO(this->get_logger(), "[PD] RAISE");
+        if (!raise_sent_)
+        {
+            call_lift_service(pzb_msgs::msg::LiftState::RAISE);
+            raise_sent_ = true;
+        }
+        if (lift_state_ == pzb_msgs::msg::LiftState::RAISE)
+        {
+            pd_state_ = PDState::ALIGN;
+            raise_sent_ = false;
+        }
+
         break;
 
     case PDState::ALIGN:
@@ -377,7 +422,7 @@ void StateMachineNode::pallet_delivery()
             call_lift_service(pzb_msgs::msg::LiftState::UNLOAD);
             unload_sent_ = true;
         }
-        if (lift_state_ == LIFTSTATE::UNLOAD)
+        if (lift_state_ == pzb_msgs::msg::LiftState::UNLOAD)
         {
             pd_state_ = PDState::UNLOAD;
             unload_sent_ = false;
@@ -408,7 +453,7 @@ void StateMachineNode::pallet_delivery()
             call_lift_service(pzb_msgs::msg::LiftState::IDLE);
             idle_sent_ = true;
         }
-        if (lift_state_ == LIFTSTATE::IDLE)
+        if (lift_state_ == pzb_msgs::msg::LiftState::IDLE)
         {
             pd_state_ = PDState::IDLE;
             idle_sent_ = false;
@@ -440,6 +485,8 @@ void StateMachineNode::set_v_goals()
         double y_ = this->get_parameter(v_goal + ".y").as_double();
         double z_ = this->get_parameter(v_goal + ".z").as_double();
 
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "GOAL %s. %f, %f", v_goal.c_str(), x_, y_);
+
         Goal new_goal{x_, y_, z_};
         v_goals.push_back(new_goal);
         add_marker(new_goal, v_goals.size(), 0);
@@ -448,7 +495,7 @@ void StateMachineNode::set_v_goals()
 
 void StateMachineNode::call_lift_service(int8_t desired_lift_state)
 {
-    auto request = std::make_shared<pzb_msgs::srv::LiftService::Request>();
+    auto request = std::make_shared<pzb_msgs::srv::SetLift::Request>();
     request->desired_state = desired_lift_state;
 
     while (!lift_client_->wait_for_service(1s))

@@ -85,7 +85,7 @@ public:
                 laser_msg.angle_increment = (ang_max - ang_min) / laser_msg.ranges.size();
                 
                 laser_msg.range_min = 0.0;
-                laser_msg.range_max = 1.0;
+                laser_msg.range_max = 2.0;
 
                 laser_pub_->publish(laser_msg);
             });

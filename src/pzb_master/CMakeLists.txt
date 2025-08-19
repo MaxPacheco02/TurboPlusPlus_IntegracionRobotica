@@ -44,9 +44,13 @@ set(DEPENDENCIES
 add_executable(state_machine_node src/state_machine_node.cpp)
 ament_target_dependencies(state_machine_node ${DEPENDENCIES})
 
+add_executable(movement_tracker_node src/movement_tracker_node.cpp)
+ament_target_dependencies(movement_tracker_node ${DEPENDENCIES})
+
 # Install targets
 install(TARGETS
   state_machine_node
+  movement_tracker_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
